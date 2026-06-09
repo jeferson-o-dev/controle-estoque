@@ -27,8 +27,8 @@ Sistema desktop desenvolvido em **Java Swing** para gerenciamento de estoque, co
 
 ---
 
-## 📁 Estrutura do Projeto
 
+## 📁 Estrutura do Projeto
 src/
 ├── estoque/
 │ ├── model/
