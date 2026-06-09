@@ -29,24 +29,23 @@ Sistema desktop desenvolvido em **Java Swing** para gerenciamento de estoque, co
 
 
 ## 📁 Estrutura do Projeto
+
+```
 src/
 ├── estoque/
-│ ├── model/
-│ │ ├── Produto.java
-│ │ └── Movimentacao.java
-│ ├── controller/
-│ │ └── EstoqueController.java
-│ ├── view/
-│ │ ├── EstoqueGUI.java
-│ │ └── Main.java
-│ └── database/
-│ └── DatabaseConnection.java
+│   ├── model/
+│   │   ├── Produto.java
+│   │   └── Movimentacao.java
+│   ├── controller/
+│   │   └── EstoqueController.java
+│   ├── view/
+│   │   ├── EstoqueGUI.java
+│   │   └── Main.java
+│   └── database/
+│       └── DatabaseConnection.java
 lib/
 └── ucanaccess-5.1.5-uber.jar
-
-
-
----
+```
 
 ## 🚀 Como Executar
 
