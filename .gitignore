@@ -1,23 +1,6 @@
-# Arquivos compilados
-/bin/
-/target/
-*.class
-
-# Arquivos do Eclipse
-.settings/
-.project
-.classpath
-
-# Banco de dados
+memory
+memory.data
+memory.properties
+memory.script
 *.accdb
 *.laccdb
-
-# Arquivos serializados
-*.ser
-
-# JARs gerados (se você gera dentro do projeto)
-*.jar
-
-# Arquivos temporários
-*.log
-*.tmp

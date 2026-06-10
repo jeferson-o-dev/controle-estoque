@@ -31,7 +31,9 @@ public class DatabaseConnection {
 	            tipo TEXT NOT NULL,
 	            unidades_por_fardo INTEGER,
 	            quantidade_fardos INTEGER,
-	            quantidade_unidades INTEGER
+	            quantidade_unidades INTEGER,
+	            quantidade_fardos_inicial INTEGER,
+	            quantidade_unidades_inicial INTEGER
 	        )
 	    """;
 
@@ -50,28 +52,18 @@ public class DatabaseConnection {
 	    try (Connection conn = getConnection();
 	         Statement stmt = conn.createStatement()) {
 
-	        // Tenta criar a tabela produtos
-	        try {
+	        if (!existeTabela(conn, "produtos")) {
 	            stmt.execute(sqlProdutos);
 	            System.out.println("Tabela 'produtos' criada.");
-	        } catch (SQLException e) {
-	            if (e.getMessage().toLowerCase().contains("already exists")) {
-	                System.out.println("Tabela 'produtos' já existe.");
-	            } else {
-	                e.printStackTrace();   // só mostra se for outro erro
-	            }
+	        } else {
+	            System.out.println("Tabela 'produtos' já existe.");
 	        }
 
-	        // Tenta criar a tabela movimentacoes
-	        try {
+	        if (!existeTabela(conn, "movimentacoes")) {
 	            stmt.execute(sqlMovimentacoes);
 	            System.out.println("Tabela 'movimentacoes' criada.");
-	        } catch (SQLException e) {
-	            if (e.getMessage().toLowerCase().contains("already exists")) {
-	                System.out.println("Tabela 'movimentacoes' já existe.");
-	            } else {
-	                e.printStackTrace();
-	            }
+	        } else {
+	            System.out.println("Tabela 'movimentacoes' já existe.");
 	        }
 
 	    } catch (SQLException e) {
@@ -94,6 +86,24 @@ public class DatabaseConnection {
             return true;
         } catch (SQLException e) {
             return false;
+        }
+    }
+    
+    public static void verificarColunas() {
+        String[] colunas = {"quantidade_fardos_inicial", "quantidade_unidades_inicial"};
+        for (String coluna : colunas) {
+            try (Connection conn = getConnection();
+                 Statement stmt = conn.createStatement()) {
+                stmt.execute("ALTER TABLE produtos ADD COLUMN " + coluna + " INTEGER");
+                System.out.println("Coluna '" + coluna + "' adicionada.");
+            } catch (SQLException e) {
+                if (e.getMessage().toLowerCase().contains("duplicate column") ||
+                    e.getMessage().toLowerCase().contains("already exists")) {
+                    System.out.println("Coluna '" + coluna + "' já existe.");
+                } else {
+                    e.printStackTrace();
+                }
+            }
         }
     }
     

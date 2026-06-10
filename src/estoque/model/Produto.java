@@ -12,6 +12,8 @@ public class Produto implements Serializable {
     private int unidadesPorFardo; // usado apenas se tipo == FARDO
     private int quantidadeFardos;  // fardos fechados em estoque
     private int quantidadeUnidades; // unidades avulsas
+    private int quantidadeFardosInicial;
+    private int quantidadeUnidadesInicial;
     
     public enum TipoProduto { UNITARIO, FARDO }
     
@@ -78,6 +80,19 @@ public class Produto implements Serializable {
 
     public void setQuantidadeUnidades(int quantidadeUnidades) {
         this.quantidadeUnidades = quantidadeUnidades;
+    }
+    
+    public int getQuantidadeFardosInicial() {
+        return quantidadeFardosInicial;
+    }
+    public void setQuantidadeFardosInicial(int quantidadeFardosInicial) {
+        this.quantidadeFardosInicial = quantidadeFardosInicial;
+    }
+    public int getQuantidadeUnidadesInicial() {
+        return quantidadeUnidadesInicial;
+    }
+    public void setQuantidadeUnidadesInicial(int quantidadeUnidadesInicial) {
+        this.quantidadeUnidadesInicial = quantidadeUnidadesInicial;
     }
 
     // Método toString para exibição amigável (usado no JComboBox e no leitor)

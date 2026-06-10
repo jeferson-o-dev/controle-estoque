@@ -1,21 +1,29 @@
 package estoque.controller;
 
-import estoque.model.Produto;
-import estoque.model.Movimentacao;
-import estoque.database.DatabaseConnection;
-
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+
+import estoque.database.DatabaseConnection;
+import estoque.model.Movimentacao;
+import estoque.model.Produto;
+import estoque.model.ProdutoSaldo;
 
 public class EstoqueController {
 
     public EstoqueController() {
         System.out.println("=== EstoqueController (banco) iniciado ===");
         DatabaseConnection.criarTabelas();
+        DatabaseConnection.verificarColunas();
     }
+    
 
     // ---------- ADICIONAR PRODUTO ----------
     public void adicionarProduto(Produto p) {
@@ -27,7 +35,7 @@ public class EstoqueController {
             throw new IllegalArgumentException("Já existe um produto com esse código de barras.");
         }
 
-        String sql = "INSERT INTO produtos (codigo_barras, nome, tipo, unidades_por_fardo, quantidade_fardos, quantidade_unidades) VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO produtos (codigo_barras, nome, tipo, unidades_por_fardo, quantidade_fardos, quantidade_unidades, quantidade_fardos_inicial, quantidade_unidades_inicial) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -38,6 +46,8 @@ public class EstoqueController {
             stmt.setInt(4, p.getUnidadesPorFardo());
             stmt.setInt(5, p.getQuantidadeFardos());
             stmt.setInt(6, p.getQuantidadeUnidades());
+            stmt.setInt(7, p.getQuantidadeFardos());      // inicial
+            stmt.setInt(8, p.getQuantidadeUnidades());    // inicial
             stmt.executeUpdate();
 
             try (ResultSet rs = stmt.getGeneratedKeys()) {
@@ -240,6 +250,8 @@ public class EstoqueController {
         p.setUnidadesPorFardo(rs.getInt("unidades_por_fardo"));
         p.setQuantidadeFardos(rs.getInt("quantidade_fardos"));
         p.setQuantidadeUnidades(rs.getInt("quantidade_unidades"));
+        p.setQuantidadeFardosInicial(rs.getInt("quantidade_fardos_inicial"));
+        p.setQuantidadeUnidadesInicial(rs.getInt("quantidade_unidades_inicial"));
         return p;
     }
 
@@ -262,4 +274,76 @@ public class EstoqueController {
             throw new RuntimeException("Sem conexão com o banco de dados.");
         }
     }
+    
+    public List<Movimentacao> getMovimentacoesPorPeriodo(LocalDate inicio, LocalDate fim) {
+        List<Movimentacao> lista = new ArrayList<>();
+        String sql = "SELECT * FROM movimentacoes WHERE data_hora >= ? AND data_hora < ? ORDER BY data_hora";
+        
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, inicio.atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            stmt.setString(2, fim.plusDays(1).atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                Movimentacao m = new Movimentacao();
+                m.setId(rs.getInt("id"));
+                m.setDataHora(LocalDateTime.parse(rs.getString("data_hora"), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.SSSSSS]")));
+                m.setProdutoId(rs.getInt("produto_id"));
+                m.setProdutoNome(rs.getString("produto_nome"));
+                m.setTipo(Movimentacao.TipoMovimento.valueOf(rs.getString("tipo")));
+                m.setQuantidadeUnidades(rs.getInt("quantidade"));
+                m.setDescricao(rs.getString("descricao"));
+                lista.add(m);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return lista;
+    }
+    
+    public List<ProdutoSaldo> getEstadoEstoqueNaData(LocalDate data) {
+        List<ProdutoSaldo> resultado = new ArrayList<>();
+        // Busca todos os produtos atuais (que podem ter sido cadastrados após a data, mas consideramos apenas os que existiam até a data)
+        // Vamos usar a tabela de produtos para obter os dados base e depois calcular o saldo acumulado até a data.
+        String sql = """
+        	    SELECT p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo,
+        	           COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) AS saldo
+        	    FROM produtos p
+        	    LEFT JOIN movimentacoes m ON p.id = m.produto_id AND m.data_hora < ?
+        	    WHERE EXISTS (
+        	        SELECT 1 FROM movimentacoes m2
+        	        WHERE m2.produto_id = p.id AND m2.data_hora < ?
+        	    )
+        	    GROUP BY p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo
+        	""";
+        // Nota: a condição m.data_hora < ? considera apenas movimentações antes da data fornecida.
+        // Para incluir o dia exato, usar m.data_hora < ? + 1 dia (ou <=). Usaremos < data.plusDays(1).
+        
+        try (Connection conn = DatabaseConnection.getConnection();
+        	     PreparedStatement stmt = conn.prepareStatement(sql)) {
+        	    stmt.setString(1, data.plusDays(1).atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        	    stmt.setString(2, data.plusDays(1).atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        	    ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                String codigo = rs.getString("codigo_barras");
+                String nome = rs.getString("nome");
+                int unidadesPorFardo = rs.getInt("unidades_por_fardo");
+                int saldo = rs.getInt("saldo");
+                
+                int fardos = 0;
+                int unidadesAvulsas = 0;
+                if (unidadesPorFardo > 0) {
+                    fardos = saldo / unidadesPorFardo;
+                    unidadesAvulsas = saldo % unidadesPorFardo;
+                } else {
+                    unidadesAvulsas = saldo;
+                }
+                resultado.add(new ProdutoSaldo(codigo, nome, fardos, unidadesAvulsas, saldo));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return resultado;
+    }
+    
 }
