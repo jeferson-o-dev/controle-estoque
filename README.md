@@ -23,7 +23,7 @@ Sistema desktop desenvolvido em Java Swing para gerenciamento de estoque, com su
 - Eclipse como IDE (projeto compatível com qualquer IDE Java)
 
 ## 📁 Estrutura do Projeto
-
+'''
 rc/
 ├── estoque/
 │ ├── model/
@@ -40,7 +40,7 @@ rc/
 lib/
 └── ucanaccess-5.1.5-uber.jar
 
-
+'''
 
 ## 🚀 Como Executar
 
