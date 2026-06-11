@@ -15,6 +15,7 @@ import java.util.List;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -29,12 +30,14 @@ import javax.swing.JTextField;
 import javax.swing.table.DefaultTableModel;
 
 import estoque.controller.EstoqueController;
+import estoque.model.Categoria;
 import estoque.model.Movimentacao;
 import estoque.model.Produto;
 import estoque.model.ProdutoSaldo;
 
 public class EstoqueGUI extends JFrame {
-
+	private JComboBox<Categoria> cbFiltroCategoria; 
+	private JComboBox<Categoria> cbCategoriaAdicionar;
 	private JComboBox<String> cbOrdenacaoListar;
 	private JLabel lblQuantidadeFardos;
 	private DefaultTableModel tableModelEstado;
@@ -77,6 +80,7 @@ public class EstoqueGUI extends JFrame {
 		tabbedPane.addTab("Movimentações", criarPainelMovimentacoes());
 		tabbedPane.addTab("Leitor de Códigos", criarPainelLeitor());
 		tabbedPane.addTab("Relatórios", criarPainelRelatorios());
+		tabbedPane.addTab("Categorias", criarPainelCategorias());
 		add(tabbedPane);
 	}
 
@@ -91,7 +95,7 @@ public class EstoqueGUI extends JFrame {
 		panelOrdenacao.add(cbOrdenacaoListar);
 
 		// Tabela
-		String[] colunas = {"Código de Barras", "Nome", "Tipo", "Unid./Fardo"};
+		String[] colunas = {"Código de Barras", "Nome", "Tipo", "Unid./Fardo", "Categoria"};
 		tableModelProdutos = new DefaultTableModel(colunas, 0);
 		tableProdutos = new JTable(tableModelProdutos);
 		tableProdutos.setDefaultEditor(Object.class, null); // já existente? mantemos
@@ -131,13 +135,14 @@ public class EstoqueGUI extends JFrame {
 		tableModelProdutos.setRowCount(0);
 		for (Produto p : lista) {
 			tableModelProdutos.addRow(new Object[]{
-					p.getCodigoBarras(),
-					p.getNome(),
-					p.getTipo(),
-					p.getTipo() == Produto.TipoProduto.FARDO ? p.getUnidadesPorFardo() : "-"
-
-			});
+				    p.getCodigoBarras(),
+				    p.getNome(),
+				    p.getTipo(),
+				    p.getTipo() == Produto.TipoProduto.FARDO ? p.getUnidadesPorFardo() : "-",
+				    p.getCategoriaNome() != null ? p.getCategoriaNome() : ""
+				});
 		}
+		
 	}
 	//EXCLUIR PRODUTO SELECIONADO
 	private void excluirProdutoSelecionado() {
@@ -274,9 +279,21 @@ public class EstoqueGUI extends JFrame {
 		gbc.gridx = 1;
 		tfNomeProduto = new JTextField(20);
 		panel.add(tfNomeProduto, gbc);
+		
+		// Linha da Categoria
+		gbc.gridx = 0; gbc.gridy = 2;  // ajuste conforme o layout atual (provavelmente y=2 já está tipo, então mude os y seguintes)
+		panel.add(new JLabel("Categoria:"), gbc);
+		gbc.gridx = 1;
+		cbCategoriaAdicionar = new JComboBox<>();
+		cbCategoriaAdicionar.addItem(new Categoria(0, "Nenhuma"));
+		List<Categoria> categorias = controller.listarCategorias();
+		for (Categoria c : categorias) {
+		    cbCategoriaAdicionar.addItem(c);
+		}
+		panel.add(cbCategoriaAdicionar, gbc);
 
 		// Tipo (linha 2)
-		gbc.gridx = 0; gbc.gridy = 2;
+		gbc.gridx = 0; gbc.gridy = 3;
 		panel.add(new JLabel("Tipo:"), gbc);
 		gbc.gridx = 1;
 		rbUnitario = new JRadioButton("Unitário");
@@ -291,7 +308,7 @@ public class EstoqueGUI extends JFrame {
 		panel.add(tipoPanel, gbc);
 
 		// Unidades por Fardo (linha 3)
-		gbc.gridx = 0; gbc.gridy = 3;
+		gbc.gridx = 0; gbc.gridy = 4;
 		panel.add(new JLabel("Unidades por Fardo:"), gbc);
 		gbc.gridx = 1;
 		tfUnidadesPorFardo = new JTextField(10);
@@ -299,7 +316,7 @@ public class EstoqueGUI extends JFrame {
 		panel.add(tfUnidadesPorFardo, gbc);
 
 		// Quantidade de Fardos (linha 4)
-		gbc.gridx = 0; gbc.gridy = 4;
+		gbc.gridx = 0; gbc.gridy = 5;
 		lblQuantidadeFardos = new JLabel("Quantidade de Fardos:");
 		panel.add(lblQuantidadeFardos, gbc);
 		gbc.gridx = 1;
@@ -307,7 +324,7 @@ public class EstoqueGUI extends JFrame {
 		panel.add(tfQuantidadeFardos, gbc);
 
 		// Unidades Avulsas (linha 5)
-		gbc.gridx = 0; gbc.gridy = 5;
+		gbc.gridx = 0; gbc.gridy = 6;
 		panel.add(new JLabel("Unidades Avulsas:"), gbc);
 		gbc.gridx = 1;
 		tfQuantidadeUnidades = new JTextField(10);
@@ -315,13 +332,14 @@ public class EstoqueGUI extends JFrame {
 
 		// Botão Adicionar (linha 6)
 		JButton btnAdicionar = new JButton("Adicionar Produto");
-		gbc.gridx = 0; gbc.gridy = 6;
+		gbc.gridx = 0; gbc.gridy = 7;
 		gbc.gridwidth = 2;
 		gbc.anchor = GridBagConstraints.CENTER;
 		panel.add(btnAdicionar, gbc);
 
 		lblResultadoAdicionar = new JLabel(" ");
-		gbc.gridy = 7;
+		gbc.gridx = 0; gbc.gridy = 8;
+		gbc.gridwidth = 2;               // mantém centralizado
 		panel.add(lblResultadoAdicionar, gbc);
 
 		rbFardo.addActionListener(e -> {
@@ -386,6 +404,14 @@ public class EstoqueGUI extends JFrame {
 			p.setUnidadesPorFardo(unidadesPorFardo);
 			p.setQuantidadeFardos(qtdFardos);
 			p.setQuantidadeUnidades(qtdUnidades);
+			
+			// ⬇️ Define a categoria escolhida
+			Categoria selCat = (Categoria) cbCategoriaAdicionar.getSelectedItem();
+			if (selCat != null && selCat.getId() != 0) {
+			    p.setCategoriaId(selCat.getId());
+			} else {
+			    p.setCategoriaId(null);  // "Nenhuma" ou nulo
+			}
 
 			controller.adicionarProduto(p);
 			lblResultadoAdicionar.setForeground(new Color(0, 128, 0)); // verde escuro
@@ -503,70 +529,73 @@ public class EstoqueGUI extends JFrame {
 
 	// ==================== 5. MOVIMENTAÇÕES ====================
 	private JPanel criarPainelMovimentacoes() {
-		JPanel panel = new JPanel(new BorderLayout());
+	    JPanel panel = new JPanel(new BorderLayout());
 
-		// Filtros
-		JPanel filtroPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-		JRadioButton rbDia = new JRadioButton("Dia");
-		JRadioButton rbMes = new JRadioButton("Mês");
-		JRadioButton rbAno = new JRadioButton("Ano");
-		ButtonGroup group = new ButtonGroup();
-		group.add(rbDia); group.add(rbMes); group.add(rbAno);
-		rbDia.setSelected(true);
+	    // Filtros
+	    JPanel filtroPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+	    JRadioButton rbDia = new JRadioButton("Dia");
+	    JRadioButton rbMes = new JRadioButton("Mês");
+	    JRadioButton rbAno = new JRadioButton("Ano");
+	    ButtonGroup group = new ButtonGroup();
+	    group.add(rbDia); group.add(rbMes); group.add(rbAno);
+	    rbDia.setSelected(true);
 
-		JTextField tfData = new JTextField(12);
-		tfData.setToolTipText("Formato: yyyy-MM-dd (dia), yyyy-MM (mês) ou yyyy (ano)");
-		JButton btnFiltrar = new JButton("Filtrar");
+	    JTextField tfData = new JTextField(12);
+	    tfData.setToolTipText("dd-MM-yyyy (dia), MM-yyyy (mês) ou yyyy (ano)");
+	    JButton btnFiltrar = new JButton("Filtrar");
 
-		filtroPanel.add(new JLabel("Filtrar por:"));
-		filtroPanel.add(rbDia);
-		filtroPanel.add(rbMes);
-		filtroPanel.add(rbAno);
-		filtroPanel.add(tfData);
-		filtroPanel.add(btnFiltrar);
+	    filtroPanel.add(new JLabel("Filtrar por:"));
+	    filtroPanel.add(rbDia);
+	    filtroPanel.add(rbMes);
+	    filtroPanel.add(rbAno);
+	    filtroPanel.add(tfData);
+	    filtroPanel.add(btnFiltrar);
 
-		// Tabela de movimentações
-		String[] colunas = {"Data/Hora", "Produto", "Tipo", "Quantidade", "Descrição"};
-		tableModelMovimentacoes = new DefaultTableModel(colunas, 0);
-		tableMovimentacoes = new JTable(tableModelMovimentacoes);
-		tableMovimentacoes.setDefaultEditor(Object.class, null);
+	    // Tabela de movimentações
+	    String[] colunas = {"Data/Hora", "Produto", "Tipo", "Quantidade", "Descrição"};
+	    tableModelMovimentacoes = new DefaultTableModel(colunas, 0);
+	    tableMovimentacoes = new JTable(tableModelMovimentacoes);
+	    tableMovimentacoes.setDefaultEditor(Object.class, null);
 
-		btnFiltrar.addActionListener(e -> {
-			String dataStr = tfData.getText().trim();
-			if (dataStr.isEmpty()) {
-				carregarTodasMovimentacoes();
-				return;
-			}
-			try {
-				if (rbDia.isSelected()) {
-					// Tenta parse como dia (yyyy-MM-dd)
-					LocalDate dia = LocalDate.parse(dataStr, DateTimeFormatter.ISO_LOCAL_DATE);
-					filtrarMovimentacoesPorDia(dia);
-				} else if (rbMes.isSelected()) {
-					// Tenta parse como mês (yyyy-MM)
-					YearMonth mes = YearMonth.parse(dataStr, DateTimeFormatter.ofPattern("yyyy-MM"));
-					filtrarMovimentacoesPorMes(mes);
-				} else {
-					// Tenta parse como ano (yyyy)
-					int ano = Integer.parseInt(dataStr);
-					filtrarMovimentacoesPorAno(ano);
-				}
-			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(panel,
-						"Formato inválido!\n\n" +
-								"Para dia: yyyy-MM-dd (ex: 2026-06-09)\n" +
-								"Para mês: yyyy-MM (ex: 2026-06)\n" +
-								"Para ano: yyyy (ex: 2026)",
-								"Erro de Formato",
-								JOptionPane.WARNING_MESSAGE);
-			}
-		});
+	    btnFiltrar.addActionListener(e -> {
+	        String dataStr = tfData.getText().trim();
+	        if (dataStr.isEmpty()) {
+	            carregarTodasMovimentacoes();
+	            return;
+	        }
+	        try {
+	            if (rbDia.isSelected()) {
+	                // Formato: dd-MM-yyyy
+	                LocalDate dia = LocalDate.parse(dataStr, DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+	                filtrarMovimentacoesPorDia(dia);
+	            } else if (rbMes.isSelected()) {
+	                // Formato: MM-yyyy
+	                YearMonth mes = YearMonth.parse(dataStr, DateTimeFormatter.ofPattern("MM-yyyy"));
+	                filtrarMovimentacoesPorMes(mes);
+	            } else {
+	                // Formato: yyyy
+	                if (!dataStr.matches("\\d{4}")) {
+	                    throw new IllegalArgumentException("Ano inválido. Use 4 dígitos.");
+	                }
+	                int ano = Integer.parseInt(dataStr);
+	                filtrarMovimentacoesPorAno(ano);
+	            }
+	        } catch (Exception ex) {
+	            JOptionPane.showMessageDialog(panel,
+	                    "Formato inválido!\n\n" +
+	                    "Para dia: dd-MM-yyyy (ex: 11-06-2026)\n" +
+	                    "Para mês: MM-yyyy (ex: 06-2026)\n" +
+	                    "Para ano: yyyy (ex: 2026)",
+	                    "Erro de Formato",
+	                    JOptionPane.WARNING_MESSAGE);
+	        }
+	    });
 
-		panel.add(filtroPanel, BorderLayout.NORTH);
-		panel.add(new JScrollPane(tableMovimentacoes), BorderLayout.CENTER);
+	    panel.add(filtroPanel, BorderLayout.NORTH);
+	    panel.add(new JScrollPane(tableMovimentacoes), BorderLayout.CENTER);
 
-		carregarTodasMovimentacoes();
-		return panel;
+	    carregarTodasMovimentacoes();
+	    return panel;
 	}
 
 	private void carregarTodasMovimentacoes() {
@@ -755,217 +784,434 @@ public class EstoqueGUI extends JFrame {
 		return panel;
 	}
 
+	
 	// ==================== 7. RELATÓRIOS ====================
 	private JPanel criarPainelRelatorios() {
-		JPanel panel = new JPanel(new BorderLayout(10, 10));
+	    JPanel panel = new JPanel(new BorderLayout(10, 10));
 
-		// Painel de opções (topo)
-		JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
-		JRadioButton rbMovimentacoes = new JRadioButton("Movimentações");
-		JRadioButton rbEstado = new JRadioButton("Estado do Estoque");
-		ButtonGroup bgTipo = new ButtonGroup();
-		bgTipo.add(rbMovimentacoes);
-		bgTipo.add(rbEstado);
-		rbMovimentacoes.setSelected(true);
-		topPanel.add(rbMovimentacoes);
-		topPanel.add(rbEstado);
+	    // Painel de opções (topo)
+	    JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+	    JRadioButton rbMovimentacoes = new JRadioButton("Movimentações");
+	    JRadioButton rbEstado = new JRadioButton("Estado do Estoque");
+	    ButtonGroup bgTipo = new ButtonGroup();
+	    bgTipo.add(rbMovimentacoes);
+	    bgTipo.add(rbEstado);
+	    rbMovimentacoes.setSelected(true);
+	    topPanel.add(rbMovimentacoes);
+	    topPanel.add(rbEstado);
 
-		// Painel de filtros de data (meio)
-		JPanel filtroPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
-		JLabel lblInicio = new JLabel("Data Início:");
-		JTextField tfInicio = new JTextField(10);
-		tfInicio.setToolTipText("yyyy-MM-dd");
-		JLabel lblFim = new JLabel("Data Fim:");
-		JTextField tfFim = new JTextField(10);
-		tfFim.setToolTipText("yyyy-MM-dd");
+	    // Painel de filtros (meio)
+	    JPanel filtroPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+	    JLabel lblInicio = new JLabel("Data Início:");
+	    JTextField tfInicio = new JTextField(12);
+	    tfInicio.setToolTipText("d-M-yyyy (dia), M-yyyy (mês) ou yyyy (ano)");
+	    JLabel lblFim = new JLabel("Data Fim:");
+	    JTextField tfFim = new JTextField(12);
+	    tfFim.setToolTipText("d-M-yyyy (dia), M-yyyy (mês) ou yyyy (ano)");
 
-		filtroPanel.add(lblInicio);
-		filtroPanel.add(tfInicio);
-		filtroPanel.add(lblFim);
-		filtroPanel.add(tfFim);
+	    // Filtros adicionais – DECLARE ANTES DE USAR
+	    JLabel lblNomeFiltro = new JLabel("Nome:");
+	    JTextField tfFiltroNome = new JTextField(12);
+	    JLabel lblCatFiltro = new JLabel("Categoria:");
+	    cbFiltroCategoria = new JComboBox<>();
+	    cbFiltroCategoria.addItem(new Categoria(0, "Todas"));
+	    for (Categoria c : controller.listarCategorias()) {
+	        cbFiltroCategoria.addItem(c);
+	    }
 
-		JButton btnGerar = new JButton("Gerar Relatório");
-		JButton btnImprimir = new JButton("Imprimir");
-		JButton btnExportar = new JButton("Exportar CSV");
+	    JCheckBox chkZerados = new JCheckBox("Apenas zerados");
+	    chkZerados.setVisible(false);  // inicialmente oculto porque o padrão é Movimentações
+	    JButton btnGerar = new JButton("Gerar Relatório");
+	    JButton btnImprimir = new JButton("Imprimir");
+	    JButton btnExportar = new JButton("Exportar CSV");
 
-		filtroPanel.add(btnGerar);
-		filtroPanel.add(btnImprimir);
-		filtroPanel.add(btnExportar);
+	    // Adiciona TUDO ao painel de filtros
+	    filtroPanel.add(lblInicio);
+	    filtroPanel.add(tfInicio);
+	    filtroPanel.add(lblFim);
+	    filtroPanel.add(tfFim);
+	    filtroPanel.add(lblNomeFiltro);
+	    filtroPanel.add(tfFiltroNome);
+	    filtroPanel.add(lblCatFiltro);
+	    filtroPanel.add(cbFiltroCategoria);
+	    filtroPanel.add(chkZerados);
+	    filtroPanel.add(btnGerar);
+	    filtroPanel.add(btnImprimir);
+	    filtroPanel.add(btnExportar);
+	    
 
-		// Tabela de resultados
-		DefaultTableModel tableModel = new DefaultTableModel();
-		JTable table = new JTable(tableModel);
-		table.setDefaultEditor(Object.class, null);
-		JScrollPane scrollPane = new JScrollPane(table);
+	    // Tabela de resultados
+	    DefaultTableModel tableModel = new DefaultTableModel();
+	    JTable table = new JTable(tableModel);
+	    table.setDefaultEditor(Object.class, null);
+	    JScrollPane scrollPane = new JScrollPane(table);
 
-		// Ajuste de visibilidade dos campos de data
-		rbMovimentacoes.addActionListener(e -> {
-			lblInicio.setVisible(true);
-			tfInicio.setVisible(true);
-			lblFim.setVisible(true);
-			tfFim.setVisible(true);
-		});
-		rbEstado.addActionListener(e -> {
-			lblInicio.setVisible(true);
-			tfInicio.setVisible(true);
-			lblFim.setVisible(false);
-			tfFim.setVisible(false);
-		});
-		lblInicio.setVisible(true);
-		tfInicio.setVisible(true);
-		lblFim.setVisible(true);
-		tfFim.setVisible(true);
+	    // Ajuste de visibilidade dos campos de data
+	    rbMovimentacoes.addActionListener(e -> {
+	        lblFim.setVisible(true);
+	        tfFim.setVisible(true);
+	        chkZerados.setVisible(false);   // 🆕 oculta o checkbox em "Movimentações"
+	    });
+	    rbEstado.addActionListener(e -> {
+	        lblFim.setVisible(false);
+	        tfFim.setVisible(false);
+	        chkZerados.setVisible(true);    // 🆕 mostra o checkbox em "Estado do Estoque"
+	    });
 
-		// Ação do botão Gerar (relatório)
-		btnGerar.addActionListener(e -> {
-			try {
-				if (rbMovimentacoes.isSelected()) {
-					LocalDate inicio = LocalDate.parse(tfInicio.getText().trim(), DateTimeFormatter.ISO_LOCAL_DATE);
-					LocalDate fim = LocalDate.parse(tfFim.getText().trim(), DateTimeFormatter.ISO_LOCAL_DATE);
+	    // AÇÃO DO BOTÃO GERAR (com filtros)
+	    btnGerar.addActionListener(e -> {
+	        try {
+	            // Captura os filtros
+	            String nomeFiltro = tfFiltroNome.getText().trim();
+	            Categoria catSel = (Categoria) cbFiltroCategoria.getSelectedItem();
+	            Integer catId = (catSel != null && catSel.getId() != 0) ? catSel.getId() : null;
+	            boolean apenasZerados = chkZerados.isSelected();   // 🆕 captura estado do checkbox
 
-					if (inicio.isAfter(fim)) {
-						JOptionPane.showMessageDialog(panel, "Data inicial não pode ser maior que a final.", "Período inválido", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
-					if (fim.isAfter(LocalDate.now())) {
-						JOptionPane.showMessageDialog(panel, "A data final não pode ser futura.", "Data inválida", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
+	            if (rbMovimentacoes.isSelected()) {
+	                // ---- Relatório de Movimentações (período) ----
+	                String inicioStr = tfInicio.getText().trim();
+	                String fimStr = tfFim.getText().trim();
 
-					List<Movimentacao> movs = controller.getMovimentacoesPorPeriodo(inicio, fim);
-					String[] colunas = {"Data/Hora", "Produto", "Tipo", "Quantidade", "Descrição"};
-					tableModel.setColumnIdentifiers(colunas);
-					tableModel.setRowCount(0);
-					DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
-					for (Movimentacao m : movs) {
-						tableModel.addRow(new Object[]{
-								m.getDataHora().format(fmt),
-								m.getProdutoNome(),
-								m.getTipo(),
-								m.getQuantidadeUnidades(),
-								m.getDescricao()
-						});
-					}
-					if (movs.isEmpty()) {
-						JOptionPane.showMessageDialog(panel, "Nenhuma movimentação encontrada no período.", "Informação", JOptionPane.INFORMATION_MESSAGE);
-					}
-				} else {
-					String dataStr = tfInicio.getText().trim();
-					if (dataStr.isEmpty()) {
-						JOptionPane.showMessageDialog(panel, "Informe uma data (yyyy-MM-dd).", "Data obrigatória", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
-					LocalDate data = LocalDate.parse(dataStr, DateTimeFormatter.ISO_LOCAL_DATE);
-					if (data.isAfter(LocalDate.now())) {
-						JOptionPane.showMessageDialog(panel, "A data não pode ser futura.", "Data inválida", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
+	                if (inicioStr.isEmpty() || fimStr.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "Informe os dois campos de data (formato dd-MM-yyyy, MM-yyyy ou yyyy).",
+	                        "Campos obrigatórios", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
 
-					List<ProdutoSaldo> saldos = controller.getEstadoEstoqueNaData(data);
-					String[] colunas = {"Código", "Nome", "Fardos", "Unid. Avulsas", "Total Unidades"};
-					tableModel.setColumnIdentifiers(colunas);
-					tableModel.setRowCount(0);
-					for (ProdutoSaldo ps : saldos) {
-						tableModel.addRow(new Object[]{
-								ps.getCodigoBarras(),
-								ps.getNome(),
-								ps.getFardos(),
-								ps.getUnidadesAvulsas(),
-								ps.getTotalUnidades()
-						});
-					}
-					if (saldos.isEmpty()) {
-						JOptionPane.showMessageDialog(panel, "Nenhum produto encontrado ou sem movimentações até a data.", "Informação", JOptionPane.INFORMATION_MESSAGE);
-					}
-				}
-			} catch (DateTimeParseException ex) {
-				JOptionPane.showMessageDialog(panel, "Formato de data inválido. Use yyyy-MM-dd.", "Erro", JOptionPane.ERROR_MESSAGE);
-			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(panel, "Erro ao gerar relatório: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
-			}
-		});
+	                LocalDate[] intervaloInicio = parseDataFlexivel(inicioStr);
+	                LocalDate[] intervaloFim = parseDataFlexivel(fimStr);
 
-		// Ação do botão Imprimir
-		btnImprimir.addActionListener(e -> {
-		    // Salva as configurações ANTES do try
-		    java.awt.Font originalFont = table.getFont();
-		    int originalWidthCodigo = table.getColumnModel().getColumn(0).getPreferredWidth();
-		    int originalWidthNome = table.getColumnModel().getColumn(1).getPreferredWidth();
-		    try {
-		        table.setFont(originalFont.deriveFont(18f));
-		        table.getColumnModel().getColumn(0).setPreferredWidth(150);
-		        table.getColumnModel().getColumn(1).setPreferredWidth(250);
+	                if (intervaloInicio == null || intervaloFim == null) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "Formato de data inválido. Use dd-MM-yyyy, MM-yyyy ou yyyy.",
+	                        "Erro", JOptionPane.ERROR_MESSAGE);
+	                    return;
+	                }
 
-		        java.awt.print.PrinterJob job = java.awt.print.PrinterJob.getPrinterJob();
-		        job.setJobName("Relatório de Estoque");
-		        java.awt.print.PageFormat format = job.defaultPage();
-		        format.setOrientation(java.awt.print.PageFormat.LANDSCAPE);
-		        java.awt.print.Paper paper = format.getPaper();
-		        paper.setImageableArea(30, 30, paper.getWidth() - 60, paper.getHeight() - 60);
-		        format.setPaper(paper);
-		        job.setPrintable(table.getPrintable(javax.swing.JTable.PrintMode.FIT_WIDTH, null, null), format);
+	                LocalDate dataInicial = intervaloInicio[0];
+	                LocalDate dataFinal = intervaloFim[1];
 
-		        if (job.printDialog()) {
-		            job.print();
-		        }
-		    } catch (java.awt.print.PrinterException ex) {
-		        JOptionPane.showMessageDialog(panel, "Erro ao imprimir: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
-		    } finally {
-		        // Restaura sempre, mesmo se ocorrer exceção
-		        table.getColumnModel().getColumn(0).setPreferredWidth(originalWidthCodigo);
-		        table.getColumnModel().getColumn(1).setPreferredWidth(originalWidthNome);
-		        table.setFont(originalFont);
-		    }
-		});
+	                if (dataInicial.isAfter(dataFinal)) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "A data inicial não pode ser maior que a final.",
+	                        "Período inválido", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
+	                if (dataFinal.isAfter(LocalDate.now())) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "A data final não pode ser futura.",
+	                        "Data inválida", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
 
-		// Ação do botão Exportar CSV
-		btnExportar.addActionListener(e -> {
-			JFileChooser fileChooser = new JFileChooser();
-			fileChooser.setSelectedFile(new java.io.File("relatorio.csv"));
-			int result = fileChooser.showSaveDialog(panel);
-			if (result == JFileChooser.APPROVE_OPTION) {
-				java.io.File arquivo = fileChooser.getSelectedFile();
-				try (java.io.PrintWriter pw = new java.io.PrintWriter(
-						new java.io.OutputStreamWriter(
-								new java.io.FileOutputStream(arquivo), java.nio.charset.StandardCharsets.UTF_8))) {
-					pw.print('\uFEFF'); // BOM UTF-8
+	                // CHAMADA COM FILTROS
+	                List<Movimentacao> movs = controller.getMovimentacoesPorPeriodo(
+	                    dataInicial, dataFinal,
+	                    nomeFiltro.isEmpty() ? null : nomeFiltro,
+	                    catId
+	                );
+	                String[] colunas = {"Data/Hora", "Produto", "Tipo", "Quantidade", "Descrição"};
+	                tableModel.setColumnIdentifiers(colunas);
+	                tableModel.setRowCount(0);
+	                DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
+	                for (Movimentacao m : movs) {
+	                    tableModel.addRow(new Object[]{
+	                        m.getDataHora().format(fmt),
+	                        m.getProdutoNome(),
+	                        m.getTipo(),
+	                        m.getQuantidadeUnidades(),
+	                        m.getDescricao()
+	                    });
+	                }
+	                if (movs.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "Nenhuma movimentação encontrada no período.",
+	                        "Informação", JOptionPane.INFORMATION_MESSAGE);
+	                }
+	            } else {
+	                // ---- Relatório de Estado do Estoque (apenas data) ----
+	                String dataStr = tfInicio.getText().trim();
+	                if (dataStr.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "Informe uma data (formato dd-MM-yyyy, MM-yyyy ou yyyy).",
+	                        "Data obrigatória", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
 
-					// Cabeçalho (sem tabulação, sem aspas)
-					for (int i = 0; i < tableModel.getColumnCount(); i++) {
-						pw.print(tableModel.getColumnName(i));
-						if (i < tableModel.getColumnCount() - 1) pw.print(";");
-					}
-					pw.println();
+	                LocalDate[] intervalo = parseDataFlexivel(dataStr);
+	                if (intervalo == null) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "Formato de data inválido. Use dd-MM-yyyy, MM-yyyy ou yyyy.",
+	                        "Erro", JOptionPane.ERROR_MESSAGE);
+	                    return;
+	                }
 
-					// Dados
-					for (int row = 0; row < tableModel.getRowCount(); row++) {
-						for (int col = 0; col < tableModel.getColumnCount(); col++) {
-							Object valor = tableModel.getValueAt(row, col);
-							String texto = valor != null ? valor.toString() : "";
+	                LocalDate dataReferencia = intervalo[1];
 
-							if (col == 0) {
-								// Coluna de código de barras: força texto com tabulação
-								pw.print("\t" + texto);
-							} else {
-								// Demais colunas: escreve normalmente (se houver ponto-e-vírgula no texto, isso pode quebrar, mas não é esperado)
-								pw.print(texto);
-							}
-							if (col < tableModel.getColumnCount() - 1) pw.print(";");
-						}
-						pw.println();
-					}
-					JOptionPane.showMessageDialog(panel, "Arquivo salvo com sucesso!");
-				} catch (Exception ex) {
-					JOptionPane.showMessageDialog(panel, "Erro ao exportar: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
-				}
-			}
-		});
+	                if (dataReferencia.isAfter(LocalDate.now())) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "A data não pode ser futura.",
+	                        "Data inválida", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
 
-		panel.add(topPanel, BorderLayout.NORTH);
-		panel.add(filtroPanel, BorderLayout.CENTER);
-		panel.add(scrollPane, BorderLayout.SOUTH);
+	                // 🆕 CHAMADA COM FILTROS (incluindo apenasZerados)
+	                List<ProdutoSaldo> saldos = controller.getEstadoEstoqueNaData(
+	                    dataReferencia,
+	                    nomeFiltro.isEmpty() ? null : nomeFiltro,
+	                    catId,
+	                    apenasZerados
+	                );
+	                String[] colunas = {"Código", "Nome", "Fardos", "Unid. Avulsas", "Total Unidades"};
+	                tableModel.setColumnIdentifiers(colunas);
+	                tableModel.setRowCount(0);
+	                for (ProdutoSaldo ps : saldos) {
+	                    tableModel.addRow(new Object[]{
+	                        ps.getCodigoBarras(),
+	                        ps.getNome(),
+	                        ps.getFardos(),
+	                        ps.getUnidadesAvulsas(),
+	                        ps.getTotalUnidades()
+	                    });
+	                }
 
-		return panel;
+	                // 🆕 Renderizador para destacar produtos zerados em vermelho
+	                table.setDefaultRenderer(Object.class, new javax.swing.table.DefaultTableCellRenderer() {
+	                    @Override
+	                    public java.awt.Component getTableCellRendererComponent(JTable table, Object value,
+	                            boolean isSelected, boolean hasFocus, int row, int column) {
+	                        java.awt.Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+	                        // Só aplica se a tabela tiver a coluna "Total Unidades" no índice 4
+	                        if (table.getColumnCount() > 4 && "Total Unidades".equals(table.getColumnName(4))) {
+	                            Object totalObj = table.getModel().getValueAt(row, 4);
+	                            if (totalObj instanceof Integer) {
+	                                int total = (Integer) totalObj;
+	                                if (total == 0) {
+	                                    c.setForeground(java.awt.Color.RED);
+	                                    if (!isSelected) {
+	                                        c.setBackground(new java.awt.Color(255, 230, 230));
+	                                    }
+	                                } else {
+	                                    c.setForeground(java.awt.Color.BLACK);
+	                                    c.setBackground(isSelected ? table.getSelectionBackground() : java.awt.Color.WHITE);
+	                                }
+	                            }
+	                        }
+	                        return c;
+	                    }
+	                });
+
+	                if (saldos.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                        "Nenhum produto encontrado.",
+	                        "Informação", JOptionPane.INFORMATION_MESSAGE);
+	                }
+	            }
+	        } catch (DateTimeParseException ex) {
+	            JOptionPane.showMessageDialog(panel,
+	                "Formato de data inválido. Use os formatos indicados.",
+	                "Erro", JOptionPane.ERROR_MESSAGE);
+	        } catch (Exception ex) {
+	            JOptionPane.showMessageDialog(panel,
+	                "Erro ao gerar relatório: " + ex.getMessage(),
+	                "Erro", JOptionPane.ERROR_MESSAGE);
+	        }
+	    });
+
+	    // Ação do botão Imprimir (com proteção)
+	    btnImprimir.addActionListener(e -> {
+	        if (table.getColumnCount() < 2) {
+	            JOptionPane.showMessageDialog(panel,
+	                "Gere um relatório antes de imprimir.",
+	                "Aviso", JOptionPane.WARNING_MESSAGE);
+	            return;
+	        }
+	        java.awt.Font originalFont = table.getFont();
+	        int originalWidthCodigo = table.getColumnModel().getColumn(0).getPreferredWidth();
+	        int originalWidthNome = table.getColumnModel().getColumn(1).getPreferredWidth();
+	        try {
+	            table.setFont(originalFont.deriveFont(18f));
+	            table.getColumnModel().getColumn(0).setPreferredWidth(150);
+	            table.getColumnModel().getColumn(1).setPreferredWidth(250);
+
+	            java.awt.print.PrinterJob job = java.awt.print.PrinterJob.getPrinterJob();
+	            job.setJobName("Relatório de Estoque");
+	            java.awt.print.PageFormat format = job.defaultPage();
+	            format.setOrientation(java.awt.print.PageFormat.LANDSCAPE);
+	            java.awt.print.Paper paper = format.getPaper();
+	            paper.setImageableArea(30, 30, paper.getWidth() - 60, paper.getHeight() - 60);
+	            format.setPaper(paper);
+	            job.setPrintable(table.getPrintable(javax.swing.JTable.PrintMode.FIT_WIDTH, null, null), format);
+
+	            if (job.printDialog()) {
+	                job.print();
+	            }
+	        } catch (java.awt.print.PrinterException ex) {
+	            JOptionPane.showMessageDialog(panel, "Erro ao imprimir: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+	        } finally {
+	            table.getColumnModel().getColumn(0).setPreferredWidth(originalWidthCodigo);
+	            table.getColumnModel().getColumn(1).setPreferredWidth(originalWidthNome);
+	            table.setFont(originalFont);
+	        }
+	    });
+
+	    // Ação do botão Exportar CSV
+	    btnExportar.addActionListener(e -> {
+	        JFileChooser fileChooser = new JFileChooser();
+	        fileChooser.setSelectedFile(new java.io.File("relatorio.csv"));
+	        int result = fileChooser.showSaveDialog(panel);
+	        if (result == JFileChooser.APPROVE_OPTION) {
+	            java.io.File arquivo = fileChooser.getSelectedFile();
+	            try (java.io.PrintWriter pw = new java.io.PrintWriter(
+	                    new java.io.OutputStreamWriter(
+	                            new java.io.FileOutputStream(arquivo), java.nio.charset.StandardCharsets.UTF_8))) {
+	                pw.print('\uFEFF'); // BOM UTF-8
+
+	                for (int i = 0; i < tableModel.getColumnCount(); i++) {
+	                    pw.print(tableModel.getColumnName(i));
+	                    if (i < tableModel.getColumnCount() - 1) pw.print(";");
+	                }
+	                pw.println();
+
+	                for (int row = 0; row < tableModel.getRowCount(); row++) {
+	                    for (int col = 0; col < tableModel.getColumnCount(); col++) {
+	                        Object valor = tableModel.getValueAt(row, col);
+	                        String texto = valor != null ? valor.toString() : "";
+	                        if (col == 0) {
+	                            pw.print("\t" + texto);
+	                        } else {
+	                            pw.print(texto);
+	                        }
+	                        if (col < tableModel.getColumnCount() - 1) pw.print(";");
+	                    }
+	                    pw.println();
+	                }
+	                JOptionPane.showMessageDialog(panel, "Arquivo salvo com sucesso!");
+	            } catch (Exception ex) {
+	                JOptionPane.showMessageDialog(panel, "Erro ao exportar: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+	            }
+	        }
+	    });
+
+	    panel.add(topPanel, BorderLayout.NORTH);
+	    panel.add(filtroPanel, BorderLayout.CENTER);
+	    panel.add(scrollPane, BorderLayout.SOUTH);
+
+	    return panel;
+	}
+	/**
+	 * Interpreta uma string de data no formato dd-MM-yyyy, MM-yyyy ou yyyy.
+	 * Retorna um array com duas datas: [inicio, fim].
+	 * - Se for dia (dd-MM-yyyy): inicio = fim = a data fornecida.
+	 * - Se for mês (MM-yyyy): inicio = primeiro dia do mês, fim = último dia do mês.
+	 * - Se for ano (yyyy): inicio = 01/01/ano, fim = 31/12/ano.
+	 * Se a string for vazia ou inválida, retorna null.
+	 */
+	private LocalDate[] parseDataFlexivel(String texto) throws DateTimeParseException {
+	    if (texto == null || texto.trim().isEmpty()) {
+	        return null;
+	    }
+	    texto = texto.trim();
+	    // Dia: d-M-yyyy (aceita 1 ou 2 dígitos para dia e mês)
+	    if (texto.matches("\\d{1,2}-\\d{1,2}-\\d{4}")) {
+	        LocalDate data = LocalDate.parse(texto, DateTimeFormatter.ofPattern("d-M-yyyy"));
+	        return new LocalDate[]{data, data};
+	    }
+	    // Mês: M-yyyy (aceita 1 ou 2 dígitos para o mês)
+	    if (texto.matches("\\d{1,2}-\\d{4}")) {
+	        YearMonth ym = YearMonth.parse(texto, DateTimeFormatter.ofPattern("M-yyyy"));
+	        return new LocalDate[]{ym.atDay(1), ym.atEndOfMonth()};
+	    }
+	    // Ano: yyyy
+	    if (texto.matches("\\d{4}")) {
+	        int ano = Integer.parseInt(texto);
+	        return new LocalDate[]{LocalDate.of(ano, 1, 1), LocalDate.of(ano, 12, 31)};
+	    }
+	    throw new DateTimeParseException("Formato inválido", texto, 0);
+	}
+	
+	private JPanel criarPainelCategorias() {
+	    JPanel panel = new JPanel(new BorderLayout());
+	    DefaultTableModel model = new DefaultTableModel(new String[]{"ID", "Nome"}, 0);
+	    JTable table = new JTable(model);
+	    table.setDefaultEditor(Object.class, null);
+	    atualizarTabelaCategorias(model);
+
+	    JPanel botoes = new JPanel();
+	    JTextField tfNomeCat = new JTextField(15);
+	    JButton btnAdicionar = new JButton("Adicionar");
+	    JButton btnRemover = new JButton("Remover Selecionada");
+	    botoes.add(new JLabel("Nome:"));
+	    botoes.add(tfNomeCat);
+	    botoes.add(btnAdicionar);
+	    botoes.add(btnRemover);
+
+	    btnAdicionar.addActionListener(e -> {
+	        String nome = tfNomeCat.getText().trim();
+	        if (nome.isEmpty()) {
+	            JOptionPane.showMessageDialog(panel, "Digite um nome.");
+	            return;
+	        }
+	        try {
+	            controller.adicionarCategoria(nome);
+	            tfNomeCat.setText("");
+	            atualizarTabelaCategorias(model);
+	            atualizarComboCategorias(); // atualizar combos em outras abas
+	        } catch (IllegalArgumentException ex) {
+	            JOptionPane.showMessageDialog(panel, ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+	        }
+	    });
+
+	    btnRemover.addActionListener(e -> {
+	        int row = table.getSelectedRow();
+	        if (row == -1) {
+	            JOptionPane.showMessageDialog(panel, "Selecione uma categoria.");
+	            return;
+	        }
+	        int id = (int) model.getValueAt(row, 0);
+	        String nome = (String) model.getValueAt(row, 1);
+	        int resp = JOptionPane.showConfirmDialog(panel, "Excluir categoria " + nome + "?");
+	        if (resp == JOptionPane.YES_OPTION) {
+	            try {
+	                controller.removerCategoria(id);
+	                atualizarTabelaCategorias(model);
+	                atualizarComboCategorias();
+	            } catch (IllegalArgumentException ex) {
+	                JOptionPane.showMessageDialog(panel, ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+	            }
+	        }
+	    });
+
+	    panel.add(new JScrollPane(table), BorderLayout.CENTER);
+	    panel.add(botoes, BorderLayout.SOUTH);
+	    return panel;
+	}
+
+	private void atualizarTabelaCategorias(DefaultTableModel model) {
+	    model.setRowCount(0);
+	    for (Categoria c : controller.listarCategorias()) {
+	        model.addRow(new Object[]{c.getId(), c.getNome()});
+	    }
+	}
+	
+	private void atualizarComboCategorias() {
+	    // Atualiza combo da aba Adicionar
+	    if (cbCategoriaAdicionar != null) {
+	        cbCategoriaAdicionar.removeAllItems();
+	        cbCategoriaAdicionar.addItem(new Categoria(0, "Nenhuma"));
+	        for (Categoria c : controller.listarCategorias()) {
+	            cbCategoriaAdicionar.addItem(c);
+	        }
+	    }
+	    // Atualiza combo do filtro do relatório
+	    if (cbFiltroCategoria != null) {
+	        cbFiltroCategoria.removeAllItems();
+	        cbFiltroCategoria.addItem(new Categoria(0, "Todas"));
+	        for (Categoria c : controller.listarCategorias()) {
+	            cbFiltroCategoria.addItem(c);
+	        }
+	    }
 	}
 
 }

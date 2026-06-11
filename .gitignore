@@ -4,3 +4,4 @@ memory.properties
 memory.script
 *.accdb
 *.laccdb
+/bin/

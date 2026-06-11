@@ -14,6 +14,9 @@ public class Produto implements Serializable {
     private int quantidadeUnidades; // unidades avulsas
     private int quantidadeFardosInicial;
     private int quantidadeUnidadesInicial;
+    private Integer categoriaId; // pode ser nulo
+
+    private transient String categoriaNome; // apenas para exibição, não salva no banco
     
     public enum TipoProduto { UNITARIO, FARDO }
     
@@ -94,6 +97,12 @@ public class Produto implements Serializable {
     public void setQuantidadeUnidadesInicial(int quantidadeUnidadesInicial) {
         this.quantidadeUnidadesInicial = quantidadeUnidadesInicial;
     }
+    
+    public Integer getCategoriaId() { return categoriaId; }
+    public void setCategoriaId(Integer categoriaId) { this.categoriaId = categoriaId; }
+
+    public String getCategoriaNome() { return categoriaNome; }
+    public void setCategoriaNome(String categoriaNome) { this.categoriaNome = categoriaNome; }
 
     // Método toString para exibição amigável (usado no JComboBox e no leitor)
     @Override
