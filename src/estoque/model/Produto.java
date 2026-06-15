@@ -1,6 +1,7 @@
 package estoque.model;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 public class Produto implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -9,94 +10,51 @@ public class Produto implements Serializable {
     private String codigoBarras;
     private String nome;
     private TipoProduto tipo;
-    private int unidadesPorFardo; // usado apenas se tipo == FARDO
-    private int quantidadeFardos;  // fardos fechados em estoque
-    private int quantidadeUnidades; // unidades avulsas
+    private int unidadesPorFardo;
+    private int quantidadeFardos;
+    private int quantidadeUnidades;
     private int quantidadeFardosInicial;
     private int quantidadeUnidadesInicial;
-    private Integer categoriaId; // pode ser nulo
+    private Integer categoriaId;
+    private BigDecimal precoUnitario;       // 🆕 campo de preço
 
-    private transient String categoriaNome; // apenas para exibição, não salva no banco
+    private transient String categoriaNome;
     
     public enum TipoProduto { UNITARIO, FARDO }
     
-    // Construtores (o padrão já basta)
     public Produto() {}
     
-    // Método para obter total de unidades (incluindo fardos fechados)
     public int getTotalUnidades() {
         return quantidadeFardos * unidadesPorFardo + quantidadeUnidades;
     }
 
-    // Getters e Setters (já existentes, mantidos)
-    public String getCodigoBarras() {
-        return codigoBarras;
-    }
+    // Getters e Setters
+    public String getCodigoBarras() { return codigoBarras; }
+    public void setCodigoBarras(String codigoBarras) { this.codigoBarras = codigoBarras; }
 
-    public void setCodigoBarras(String codigoBarras) {
-        this.codigoBarras = codigoBarras;
-    }
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
 
-    public int getId() {
-        return id;
-    }
+    public String getNome() { return nome; }
+    public void setNome(String nome) { this.nome = nome; }
 
-    public void setId(int id) {
-        this.id = id;
-    }
+    public TipoProduto getTipo() { return tipo; }
+    public void setTipo(TipoProduto tipo) { this.tipo = tipo; }
 
-    public String getNome() {
-        return nome;
-    }
+    public int getUnidadesPorFardo() { return unidadesPorFardo; }
+    public void setUnidadesPorFardo(int unidadesPorFardo) { this.unidadesPorFardo = unidadesPorFardo; }
 
-    public void setNome(String nome) {
-        this.nome = nome;
-    }
+    public int getQuantidadeFardos() { return quantidadeFardos; }
+    public void setQuantidadeFardos(int quantidadeFardos) { this.quantidadeFardos = quantidadeFardos; }
 
-    public TipoProduto getTipo() {
-        return tipo;
-    }
-
-    public void setTipo(TipoProduto tipo) {
-        this.tipo = tipo;
-    }
-
-    public int getUnidadesPorFardo() {
-        return unidadesPorFardo;
-    }
-
-    public void setUnidadesPorFardo(int unidadesPorFardo) {
-        this.unidadesPorFardo = unidadesPorFardo;
-    }
-
-    public int getQuantidadeFardos() {
-        return quantidadeFardos;
-    }
-
-    public void setQuantidadeFardos(int quantidadeFardos) {
-        this.quantidadeFardos = quantidadeFardos;
-    }
-
-    public int getQuantidadeUnidades() {
-        return quantidadeUnidades;
-    }
-
-    public void setQuantidadeUnidades(int quantidadeUnidades) {
-        this.quantidadeUnidades = quantidadeUnidades;
-    }
+    public int getQuantidadeUnidades() { return quantidadeUnidades; }
+    public void setQuantidadeUnidades(int quantidadeUnidades) { this.quantidadeUnidades = quantidadeUnidades; }
     
-    public int getQuantidadeFardosInicial() {
-        return quantidadeFardosInicial;
-    }
-    public void setQuantidadeFardosInicial(int quantidadeFardosInicial) {
-        this.quantidadeFardosInicial = quantidadeFardosInicial;
-    }
-    public int getQuantidadeUnidadesInicial() {
-        return quantidadeUnidadesInicial;
-    }
-    public void setQuantidadeUnidadesInicial(int quantidadeUnidadesInicial) {
-        this.quantidadeUnidadesInicial = quantidadeUnidadesInicial;
-    }
+    public int getQuantidadeFardosInicial() { return quantidadeFardosInicial; }
+    public void setQuantidadeFardosInicial(int quantidadeFardosInicial) { this.quantidadeFardosInicial = quantidadeFardosInicial; }
+    
+    public int getQuantidadeUnidadesInicial() { return quantidadeUnidadesInicial; }
+    public void setQuantidadeUnidadesInicial(int quantidadeUnidadesInicial) { this.quantidadeUnidadesInicial = quantidadeUnidadesInicial; }
     
     public Integer getCategoriaId() { return categoriaId; }
     public void setCategoriaId(Integer categoriaId) { this.categoriaId = categoriaId; }
@@ -104,7 +62,10 @@ public class Produto implements Serializable {
     public String getCategoriaNome() { return categoriaNome; }
     public void setCategoriaNome(String categoriaNome) { this.categoriaNome = categoriaNome; }
 
-    // Método toString para exibição amigável (usado no JComboBox e no leitor)
+    // 🆕 Getter e Setter do preço
+    public BigDecimal getPrecoUnitario() { return precoUnitario; }
+    public void setPrecoUnitario(BigDecimal precoUnitario) { this.precoUnitario = precoUnitario; }
+
     @Override
     public String toString() {
         return codigoBarras + " - " + nome + " (Estoque: " + getTotalUnidades() + ")";

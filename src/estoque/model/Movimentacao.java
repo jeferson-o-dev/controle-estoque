@@ -1,5 +1,6 @@
 package estoque.model;
 
+import java.math.BigDecimal;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
@@ -15,6 +16,7 @@ public class Movimentacao implements Serializable {
     private TipoMovimento tipo;
     private int quantidadeUnidades;
     private String descricao;
+    private BigDecimal precoUnitario;
     
     // Construtores
     public Movimentacao() {}
@@ -47,6 +49,9 @@ public class Movimentacao implements Serializable {
     
     public String getDescricao() { return descricao; }
     public void setDescricao(String descricao) { this.descricao = descricao; }
+    
+    public BigDecimal getPrecoUnitario() { return precoUnitario; }
+    public void setPrecoUnitario(BigDecimal precoUnitario) { this.precoUnitario = precoUnitario; }
     
     public int getId() {
         return id;

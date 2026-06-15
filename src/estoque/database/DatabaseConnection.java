@@ -117,6 +117,7 @@ public class DatabaseConnection {
         garantirColuna("produtos", "quantidade_fardos_inicial", "INT");
         garantirColuna("produtos", "quantidade_unidades_inicial", "INT");
         garantirColuna("produtos", "categoria_id", "INT NULL");
+        garantirColuna("produtos", "preco_unitario", "DECIMAL(10,2)");
     }
 
     private static void garantirColuna(String tabela, String coluna, String tipo) {
@@ -126,7 +127,10 @@ public class DatabaseConnection {
                 stmt.execute("ALTER TABLE " + tabela + " ADD " + coluna + " " + tipo);
                 System.out.println("Coluna '" + coluna + "' adicionada em '" + tabela + "'.");
             } catch (SQLException e) {
+                String msg = "Erro crítico ao verificar/adicionar a coluna '" + coluna + "' na tabela '" + tabela + "'. Verifique as permissões do banco de dados.";
+                System.err.println(msg);
                 e.printStackTrace();
+                throw new RuntimeException(msg, e);
             }
         } else {
             System.out.println("Coluna '" + coluna + "' já existe em '" + tabela + "'.");

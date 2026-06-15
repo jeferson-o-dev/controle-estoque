@@ -1,12 +1,12 @@
 package estoque.controller;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,39 +35,52 @@ public class EstoqueController {
             throw new IllegalArgumentException("Já existe um produto com esse código de barras.");
         }
 
-        String sql = "INSERT INTO produtos (codigo_barras, nome, tipo, unidades_por_fardo, quantidade_fardos, quantidade_unidades, quantidade_fardos_inicial, quantidade_unidades_inicial, categoria_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO produtos (codigo_barras, nome, tipo, unidades_por_fardo, " +
+                "quantidade_fardos, quantidade_unidades, quantidade_fardos_inicial, " +
+                "quantidade_unidades_inicial, categoria_id, preco_unitario) VALUES (?,?,?,?,?,?,?,?,?,?)";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false);
 
-            stmt.setString(1, p.getCodigoBarras().trim());
-            stmt.setString(2, p.getNome());
-            stmt.setString(3, p.getTipo().name());
-            stmt.setInt(4, p.getUnidadesPorFardo());
-            stmt.setInt(5, p.getQuantidadeFardos());
-            stmt.setInt(6, p.getQuantidadeUnidades());
-            stmt.setInt(7, p.getQuantidadeFardos());      // inicial
-            stmt.setInt(8, p.getQuantidadeUnidades());    // inicial
+            try (PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                stmt.setString(1, p.getCodigoBarras().trim());
+                stmt.setString(2, p.getNome());
+                stmt.setString(3, p.getTipo().name());
+                stmt.setInt(4, p.getUnidadesPorFardo());
+                stmt.setInt(5, p.getQuantidadeFardos());
+                stmt.setInt(6, p.getQuantidadeUnidades());
+                stmt.setInt(7, p.getQuantidadeFardos());
+                stmt.setInt(8, p.getQuantidadeUnidades());
 
-            if (p.getCategoriaId() != null) {
-                stmt.setInt(9, p.getCategoriaId());
-            } else {
-                stmt.setNull(9, java.sql.Types.INTEGER);
-            }
-            stmt.executeUpdate();
+                if (p.getCategoriaId() != null) {
+                    stmt.setInt(9, p.getCategoriaId());
+                } else {
+                    stmt.setNull(9, java.sql.Types.INTEGER);
+                }
 
-            try (ResultSet rs = stmt.getGeneratedKeys()) {
-                if (rs.next()) {
-                    p.setId(rs.getInt(1));
+                if (p.getPrecoUnitario() != null) {
+                    stmt.setBigDecimal(10, p.getPrecoUnitario());
+                } else {
+                    stmt.setNull(10, java.sql.Types.DECIMAL);
+                }
+
+                stmt.executeUpdate();
+
+                try (ResultSet rs = stmt.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        p.setId(rs.getInt(1));
+                    }
                 }
             }
 
-            registrarMovimentacao(p, Movimentacao.TipoMovimento.ENTRADA,
-                    p.getTotalUnidades(), "Produto cadastrado");
+            // Registra a movimentação inicial COM o preço
+            registrarMovimentacao(conn, p, Movimentacao.TipoMovimento.ENTRADA,
+                    p.getTotalUnidades(), "Produto cadastrado", p.getPrecoUnitario());
 
+            conn.commit();
         } catch (SQLException e) {
             System.err.println("Erro em adicionarProduto: " + e.getMessage());
-            e.printStackTrace();
+            throw new RuntimeException("Falha ao cadastrar o produto. Tente novamente.", e);
         }
     }
 
@@ -97,54 +110,96 @@ public class EstoqueController {
         verificarConexao();
         if (unidadesSolicitadas <= 0) return false;
 
-        Produto atual = buscarProdutoPorId(p.getId());
-        if (atual == null) return false;
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false);
 
-        int faltam = unidadesSolicitadas;
+            Produto atual = buscarProdutoPorId(conn, p.getId());
+            if (atual == null) {
+                conn.rollback();
+                return false;
+            }
 
-        int usarUnidades = Math.min(atual.getQuantidadeUnidades(), faltam);
-        atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() - usarUnidades);
-        faltam -= usarUnidades;
+            int faltam = unidadesSolicitadas;
+            int usarUnidades = Math.min(atual.getQuantidadeUnidades(), faltam);
+            atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() - usarUnidades);
+            faltam -= usarUnidades;
 
-        while (faltam > 0 && atual.getQuantidadeFardos() > 0) {
-            atual.setQuantidadeFardos(atual.getQuantidadeFardos() - 1);
-            atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() + atual.getUnidadesPorFardo());
-            int usarDesteFardo = Math.min(atual.getQuantidadeUnidades(), faltam);
-            atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() - usarDesteFardo);
-            faltam -= usarDesteFardo;
-        }
+            while (faltam > 0 && atual.getQuantidadeFardos() > 0) {
+                atual.setQuantidadeFardos(atual.getQuantidadeFardos() - 1);
+                atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() + atual.getUnidadesPorFardo());
+                int usarDesteFardo = Math.min(atual.getQuantidadeUnidades(), faltam);
+                atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() - usarDesteFardo);
+                faltam -= usarDesteFardo;
+            }
 
-        if (faltam > 0) {
+            if (faltam > 0) {
+                conn.rollback();
+                return false;
+            }
+
+            atualizarProdutoNoBanco(conn, atual);
+            registrarMovimentacao(conn, atual, Movimentacao.TipoMovimento.SAIDA,
+                    unidadesSolicitadas, "Remoção de " + unidadesSolicitadas + " unidade(s)",
+                    atual.getPrecoUnitario());
+
+            conn.commit();
+            return true;
+        } catch (SQLException e) {
+            System.err.println("Erro em removerQuantidade: " + e.getMessage());
+            e.printStackTrace();
             return false;
         }
-
-        atualizarProdutoNoBanco(atual);
-        registrarMovimentacao(atual, Movimentacao.TipoMovimento.SAIDA,
-                unidadesSolicitadas, "Remoção de " + unidadesSolicitadas + " unidade(s)");
-        return true;
     }
 
     // ---------- ADICIONAR QUANTIDADE (entrada rápida) ----------
     public void adicionarQuantidade(Produto p, int quantidade) {
         verificarConexao();
-        Produto atual = buscarProdutoPorId(p.getId());
-        if (atual == null) return;
-        atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() + quantidade);
-        atualizarProdutoNoBanco(atual);
-        registrarMovimentacao(atual, Movimentacao.TipoMovimento.ENTRADA, quantidade,
-                "Entrada por leitor: +" + quantidade);
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false);
+
+            Produto atual = buscarProdutoPorId(conn, p.getId());
+            if (atual == null) {
+                conn.rollback();
+                return;
+            }
+
+            atual.setQuantidadeUnidades(atual.getQuantidadeUnidades() + quantidade);
+            atualizarProdutoNoBanco(conn, atual);
+            registrarMovimentacao(conn, atual, Movimentacao.TipoMovimento.ENTRADA, quantidade,
+                    "Entrada por leitor: +" + quantidade, atual.getPrecoUnitario());
+
+            conn.commit();
+        } catch (SQLException e) {
+            System.err.println("Erro em adicionarQuantidade: " + e.getMessage());
+            throw new RuntimeException("Falha ao adicionar quantidade. Tente novamente.", e);
+        }
     }
 
     // ---------- ADICIONAR FARDOS ----------
     public void adicionarFardos(Produto p, int qtdFardos) {
         verificarConexao();
-        Produto atual = buscarProdutoPorId(p.getId());
-        if (atual == null) return;
-        atual.setQuantidadeFardos(atual.getQuantidadeFardos() + qtdFardos);
-        atualizarProdutoNoBanco(atual);
-        registrarMovimentacao(atual, Movimentacao.TipoMovimento.ENTRADA,
-                qtdFardos * atual.getUnidadesPorFardo(),
-                "Entrada por leitor: +" + qtdFardos + " fardo(s) (" + (qtdFardos * atual.getUnidadesPorFardo()) + " unid.)");
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            conn.setAutoCommit(false);
+
+            Produto atual = buscarProdutoPorId(conn, p.getId());
+            if (atual == null) {
+                conn.rollback();
+                return;
+            }
+
+            atual.setQuantidadeFardos(atual.getQuantidadeFardos() + qtdFardos);
+            int totalUnidadesAdicionadas = qtdFardos * atual.getUnidadesPorFardo();
+            atualizarProdutoNoBanco(conn, atual);
+            registrarMovimentacao(conn, atual, Movimentacao.TipoMovimento.ENTRADA,
+                    totalUnidadesAdicionadas,
+                    "Entrada por leitor: +" + qtdFardos + " fardo(s) (" + totalUnidadesAdicionadas + " unid.)",
+                    atual.getPrecoUnitario());
+
+            conn.commit();
+        } catch (SQLException e) {
+            System.err.println("Erro em adicionarFardos: " + e.getMessage());
+            throw new RuntimeException("Falha ao adicionar fardos. Tente novamente.", e);
+        }
     }
 
     // ---------- EXCLUSÃO POR CÓDIGO DE BARRAS ----------
@@ -162,25 +217,22 @@ public class EstoqueController {
         }
     }
 
-    // ---------- MOVIMENTAÇÕES ----------
-    private void registrarMovimentacao(Produto p, Movimentacao.TipoMovimento tipo,
-                                       int quantidade, String descricao) {
-        String sql = "INSERT INTO movimentacoes (data_hora, produto_id, produto_nome, tipo, quantidade, descricao) VALUES (?, ?, ?, ?, ?, ?)";
-
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-            stmt.setInt(2, p.getId());
-            stmt.setString(3, p.getNome());
-            stmt.setString(4, tipo.name());
-            stmt.setInt(5, quantidade);
-            stmt.setString(6, descricao);
+    // Nova versão que recebe a conexão e o preço unitário
+    private void registrarMovimentacao(Connection conn, Produto p, Movimentacao.TipoMovimento tipo,
+            int quantidade, String descricao, BigDecimal precoUnitario) throws SQLException {
+        String sql = "INSERT INTO movimentacoes (data_hora, produto_id, produto_nome, tipo, quantidade, descricao, preco_unitario) VALUES (GETDATE(), ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, p.getId());
+            stmt.setString(2, p.getNome());
+            stmt.setString(3, tipo.name());
+            stmt.setInt(4, quantidade);
+            stmt.setString(5, descricao);
+            if (precoUnitario != null) {
+                stmt.setBigDecimal(6, precoUnitario);
+            } else {
+                stmt.setNull(6, java.sql.Types.DECIMAL);
+            }
             stmt.executeUpdate();
-
-        } catch (SQLException e) {
-            System.err.println("Erro em registrarMovimentacao: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 
@@ -201,6 +253,7 @@ public class EstoqueController {
                 m.setTipo(Movimentacao.TipoMovimento.valueOf(rs.getString("tipo")));
                 m.setQuantidadeUnidades(rs.getInt("quantidade"));
                 m.setDescricao(rs.getString("descricao"));
+                m.setPrecoUnitario(rs.getBigDecimal("preco_unitario")); // carrega o preço também
                 lista.add(m);
             }
         } catch (SQLException e) {
@@ -217,9 +270,10 @@ public class EstoqueController {
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, codigo);
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                return carregarProduto(rs);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return carregarProduto(rs);
+                }
             }
         } catch (SQLException e) {
             System.err.println("Erro em buscarProdutoPorCodigoBarras: " + e.getMessage());
@@ -248,6 +302,19 @@ public class EstoqueController {
         return null;
     }
 
+    private Produto buscarProdutoPorId(Connection conn, int id) throws SQLException {
+        String sql = "SELECT * FROM produtos WHERE id = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, id);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return carregarProduto(rs);
+                }
+            }
+        }
+        return null;
+    }
+
     private Produto carregarProduto(ResultSet rs) throws SQLException {
         Produto p = new Produto();
         p.setId(rs.getInt("id"));
@@ -260,6 +327,7 @@ public class EstoqueController {
         p.setQuantidadeFardosInicial(rs.getInt("quantidade_fardos_inicial"));
         p.setQuantidadeUnidadesInicial(rs.getInt("quantidade_unidades_inicial"));
         p.setCategoriaId(rs.getObject("categoria_id", Integer.class));
+        p.setPrecoUnitario(rs.getBigDecimal("preco_unitario"));
         return p;
     }
 
@@ -278,12 +346,23 @@ public class EstoqueController {
         }
     }
 
+    private void atualizarProdutoNoBanco(Connection conn, Produto p) throws SQLException {
+        String sql = "UPDATE produtos SET quantidade_fardos = ?, quantidade_unidades = ? WHERE id = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, p.getQuantidadeFardos());
+            stmt.setInt(2, p.getQuantidadeUnidades());
+            stmt.setInt(3, p.getId());
+            stmt.executeUpdate();
+        }
+    }
+
     private void verificarConexao() {
         if (!DatabaseConnection.isConnectionAvailable()) {
             throw new RuntimeException("Sem conexão com o banco de dados.");
         }
     }
 
+    // GET MOVIMENTACOES POR PERIODO SEM FILTRO
     public List<Movimentacao> getMovimentacoesPorPeriodo(LocalDate inicio, LocalDate fim) {
         List<Movimentacao> lista = new ArrayList<>();
         String sql = "SELECT * FROM movimentacoes WHERE data_hora >= ? AND data_hora < ? ORDER BY data_hora";
@@ -311,32 +390,54 @@ public class EstoqueController {
         return lista;
     }
 
-    // Dentro de estoque/controller/EstoqueController.java
+    // ESTADO DO ESTOQUE NA DATA (ORIGINAL) – AGORA COM PREÇO HISTÓRICO
     public List<ProdutoSaldo> getEstadoEstoqueNaData(LocalDate data) {
         List<ProdutoSaldo> resultado = new ArrayList<>();
         String sql = """
-                    SELECT p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo,
-                           COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) AS saldo
-                    FROM produtos p
-                    LEFT JOIN movimentacoes m ON p.id = m.produto_id AND m.data_hora < ?
-                    WHERE EXISTS (
-                        SELECT 1 FROM movimentacoes m2
-                        WHERE m2.produto_id = p.id AND m2.data_hora < ?
-                    )
-                    GROUP BY p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo
-                """;
+            SELECT p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo,
+                   COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) AS saldo,
+                   COALESCE(
+                       (SELECT TOP 1 m2.preco_unitario FROM movimentacoes m2
+                        WHERE m2.produto_id = p.id AND m2.data_hora < ? AND m2.preco_unitario IS NOT NULL
+                        ORDER BY m2.data_hora DESC),
+                       p.preco_unitario
+                   ) AS preco_unitario,
+                   COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) *
+                   COALESCE(
+                       (SELECT TOP 1 m2.preco_unitario FROM movimentacoes m2
+                        WHERE m2.produto_id = p.id AND m2.data_hora < ? AND m2.preco_unitario IS NOT NULL
+                        ORDER BY m2.data_hora DESC),
+                       p.preco_unitario,
+                       0
+                   ) AS valor_total
+            FROM produtos p
+            LEFT JOIN movimentacoes m ON p.id = m.produto_id AND m.data_hora < ?
+            WHERE EXISTS (
+                SELECT 1 FROM movimentacoes m3
+                WHERE m3.produto_id = p.id AND m3.data_hora < ?
+            )
+            GROUP BY p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo, p.preco_unitario
+            """;
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, data.plusDays(1).atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-            stmt.setString(2, data.plusDays(1).atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            String dataLimite = data.plusDays(1).atStartOfDay()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            // 4 parâmetros na ordem: subconsulta preço, subconsulta valor_total, LEFT JOIN, EXISTS
+            stmt.setString(1, dataLimite);
+            stmt.setString(2, dataLimite);
+            stmt.setString(3, dataLimite);
+            stmt.setString(4, dataLimite);
+
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
                 String codigo = rs.getString("codigo_barras");
                 String nome = rs.getString("nome");
                 int unidadesPorFardo = rs.getInt("unidades_por_fardo");
                 int saldo = rs.getInt("saldo");
+                BigDecimal preco = rs.getBigDecimal("preco_unitario");
+                BigDecimal valorTotal = rs.getBigDecimal("valor_total");
 
                 int fardos = 0;
                 int unidadesAvulsas = 0;
@@ -346,11 +447,11 @@ public class EstoqueController {
                 } else {
                     unidadesAvulsas = saldo;
                 }
-                resultado.add(new ProdutoSaldo(codigo, nome, fardos, unidadesAvulsas, saldo));
+                resultado.add(new ProdutoSaldo(codigo, nome, fardos, unidadesAvulsas, saldo, preco, valorTotal));
             }
         } catch (SQLException e) {
             System.err.println("Erro em getEstadoEstoqueNaData (original): " + e.getMessage());
-            e.printStackTrace();
+            throw new RuntimeException("Erro ao consultar estado do estoque. Tente novamente.", e);
         }
         return resultado;
     }
@@ -397,7 +498,6 @@ public class EstoqueController {
     }
 
     public boolean removerCategoria(int id) {
-        // Verifica se há produtos usando a categoria
         String sqlCheck = "SELECT COUNT(*) FROM produtos WHERE categoria_id = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sqlCheck)) {
@@ -424,21 +524,21 @@ public class EstoqueController {
         }
     }
 
-    // Relatório de movimentações com filtro
+    // Relatório de movimentações com filtro (mantido, sem alteração)
     public List<Movimentacao> getMovimentacoesPorPeriodo(LocalDate inicio, LocalDate fim, String nomeProduto, Integer categoriaId) {
         List<Movimentacao> lista = new ArrayList<>();
         String sql = """
-        	    SELECT m.* FROM movimentacoes m
-        	    LEFT JOIN produtos p ON m.produto_id = p.id
-        	    WHERE m.data_hora >= ? AND m.data_hora < ?
-        	    """;
+            SELECT m.* FROM movimentacoes m
+            LEFT JOIN produtos p ON m.produto_id = p.id
+            WHERE m.data_hora >= ? AND m.data_hora < ?
+            """;
         List<Object> params = new ArrayList<>();
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         params.add(inicio.atStartOfDay().format(fmt));
         params.add(fim.plusDays(1).atStartOfDay().format(fmt));
 
         if (nomeProduto != null && !nomeProduto.trim().isEmpty()) {
-            sql += " AND LOWER(p.nome) LIKE LOWER(?)";
+            sql += " AND LOWER(m.produto_nome) LIKE LOWER(?)";
             params.add("%" + nomeProduto.trim() + "%");
         }
         if (categoriaId != null) {
@@ -469,17 +569,31 @@ public class EstoqueController {
             }
         } catch (SQLException e) {
             System.err.println("Erro em getMovimentacoesPorPeriodo (com filtros): " + e.getMessage());
-            e.printStackTrace();
+            throw new RuntimeException("Erro ao consultar movimentações. Tente novamente.", e);
         }
         return lista;
     }
 
-    // Estado do estoque na data com filtros
+    // Estado do estoque na data COM FILTROS – AGORA COM PREÇO HISTÓRICO
     public List<ProdutoSaldo> getEstadoEstoqueNaData(LocalDate data, String nomeProduto, Integer categoriaId, boolean apenasZerados) {
         List<ProdutoSaldo> resultado = new ArrayList<>();
         String base = """
             SELECT p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo,
-                   COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) AS saldo
+                   COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) AS saldo,
+                   COALESCE(
+                       (SELECT TOP 1 m2.preco_unitario FROM movimentacoes m2
+                        WHERE m2.produto_id = p.id AND m2.data_hora < ? AND m2.preco_unitario IS NOT NULL
+                        ORDER BY m2.data_hora DESC),
+                       p.preco_unitario
+                   ) AS preco_unitario,
+                   COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) *
+                   COALESCE(
+                       (SELECT TOP 1 m2.preco_unitario FROM movimentacoes m2
+                        WHERE m2.produto_id = p.id AND m2.data_hora < ? AND m2.preco_unitario IS NOT NULL
+                        ORDER BY m2.data_hora DESC),
+                       p.preco_unitario,
+                       0
+                   ) AS valor_total
             FROM produtos p
             LEFT JOIN movimentacoes m ON p.id = m.produto_id AND m.data_hora < ?
             WHERE 1=1
@@ -487,7 +601,13 @@ public class EstoqueController {
         List<Object> params = new ArrayList<>();
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         String dataLimite = data.plusDays(1).atStartOfDay().format(fmt);
-        params.add(dataLimite);
+
+        // Parâmetro 1: subconsulta do preço
+        // Parâmetro 2: subconsulta do valor_total
+        // Parâmetro 3: LEFT JOIN
+        params.add(dataLimite); // índice 1
+        params.add(dataLimite); // índice 2
+        params.add(dataLimite); // índice 3
 
         if (nomeProduto != null && !nomeProduto.trim().isEmpty()) {
             base += " AND LOWER(p.nome) LIKE LOWER(?)";
@@ -497,7 +617,7 @@ public class EstoqueController {
             base += " AND p.categoria_id = ?";
             params.add(categoriaId);
         }
-        base += " GROUP BY p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo";
+        base += " GROUP BY p.id, p.codigo_barras, p.nome, p.tipo, p.unidades_por_fardo, p.preco_unitario";
 
         if (apenasZerados) {
             base += " HAVING COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE -m.quantidade END), 0) = 0";
@@ -517,6 +637,8 @@ public class EstoqueController {
                 String nome = rs.getString("nome");
                 int unidadesPorFardo = rs.getInt("unidades_por_fardo");
                 int saldo = rs.getInt("saldo");
+                BigDecimal preco = rs.getBigDecimal("preco_unitario");
+                BigDecimal valorTotal = rs.getBigDecimal("valor_total");
 
                 int fardos = 0;
                 int unidadesAvulsas = 0;
@@ -526,11 +648,11 @@ public class EstoqueController {
                 } else {
                     unidadesAvulsas = saldo;
                 }
-                resultado.add(new ProdutoSaldo(codigo, nome, fardos, unidadesAvulsas, saldo));
+                resultado.add(new ProdutoSaldo(codigo, nome, fardos, unidadesAvulsas, saldo, preco, valorTotal));
             }
         } catch (SQLException e) {
             System.err.println("Erro em getEstadoEstoqueNaData (com filtros): " + e.getMessage());
-            e.printStackTrace();
+            throw new RuntimeException("Erro ao consultar estado do estoque. Tente novamente.", e);
         }
         return resultado;
     }
