@@ -6,15 +6,17 @@ Sistema desktop desenvolvido em Java Swing para gerenciamento de estoque, com su
 
 ## ✨ Funcionalidades
 
-- **Cadastro de produtos:** unitários ou fardos/caixas, com código de barras único e **categoria** (bebidas, carnes, laticínios, etc.).
+- **Cadastro de produtos:** unitários ou fardos/caixas, com código de barras único, **categoria** (bebidas, carnes, laticínios, etc.) e **preço unitário**.
 - **Categorias personalizáveis:** gerencie categorias em uma aba dedicada; o combo de categorias é atualizado automaticamente em todas as telas.
 - **Listagem de produtos:** exibe código, nome, tipo, unid./fardo e **categoria**; ordenação por nome ou ordem de cadastro.
-- **Estado do estoque:** visão dedicada com quantidades atuais, destaque visual (vermelho) para produtos zerados e atualização em tempo real.
-- **Movimentações de estoque:** entrada (unidades avulsas ou fardos) e saída, com abertura automática de fardos quando necessário.
+- **Estado do estoque:** visão dedicada com quantidades atuais, **destaque visual (vermelho) para produtos zerados**, colunas de preço unitário e valor total, e atualização em tempo real.
+- **Movimentações de estoque:** entrada (unidades avulsas ou fardos) e saída, com abertura automática de fardos quando necessário. **Cada movimentação registra o preço unitário do produto naquele momento.**
 - **Leitor de código de barras:** escaneie um código para abrir automaticamente as opções de entrada/saída; o botão "Entrada (Fardos)" é desabilitado para produtos unitários.
-- **Histórico de movimentações:** filtros por dia, mês e ano.
-- **Relatórios:** gere relatório de movimentações por período ou estado do estoque em uma data específica, com **filtros por nome do produto e categoria**, e opção de **exibir apenas produtos zerados**. Destaque automático em vermelho para produtos com saldo zero. Impressão e exportação CSV disponíveis.
+- **Histórico de movimentações:** **filtro único e flexível** por dia, mês ou ano (formato livre: `d-M-yyyy`, `M-yyyy` ou `yyyy`).
+- **Relatórios:** gere relatório de movimentações por período ou estado do estoque em uma data específica, com **filtros por nome do produto e categoria**, e opção de **exibir apenas produtos zerados**. **O preço exibido é o histórico (último preço praticado até a data do relatório)**, garantindo valores financeiros corretos em qualquer período. Destaque automático em vermelho para produtos com saldo zero. Impressão e exportação CSV disponíveis.
 - **Proteção contra exclusão:** impede remover produtos que ainda possuem unidades em estoque.
+- **Transações atômicas:** todas as operações de escrita (adição, remoção, entradas rápidas) são executadas em transações com `commit`/`rollback`, garantindo consistência dos dados.
+- **Data/hora do servidor:** todas as movimentações utilizam `GETDATE()` do SQL Server, eliminando dependência do relógio da máquina cliente.
 - **Interface gráfica amigável:** organizada em abas (Listar, Estado, Adicionar, Remover, Movimentações, Leitor, Relatórios, Categorias).
 
 ---
@@ -23,17 +25,18 @@ Sistema desktop desenvolvido em Java Swing para gerenciamento de estoque, com su
 
 | Funcionalidade | Antes | Agora |
 |----------------|-------|-------|
-| **Categorias** | Produtos não possuíam categorias | Campo "Categoria" na adição de produto, gerenciamento em aba própria, exibição na listagem e filtro nos relatórios |
-| **Relatórios – Estado do Estoque** | Mostrava apenas produtos com movimentações | Mostra todos os produtos, com destaque vermelho para zerados e opção de filtrar apenas os zerados (checkbox "Apenas zerados") |
-| **Relatórios – Filtros** | Apenas data | Filtros adicionais: nome do produto (case‑insensitive) e categoria |
-| **Datas** | Aceitava apenas `dd-MM-yyyy`, `MM-yyyy`, `yyyy` | Aceita também `d-M-yyyy` e `M-yyyy` (1 ou 2 dígitos para dia/mês) |
-| **Tratamento de erros SQL** | Apenas `printStackTrace`, silencioso para o usuário | Mensagens descritivas no console (`System.err`) indicando qual método falhou |
-| **Checkbox "Apenas zerados"** | Inexistente | Aparece apenas no relatório de Estado do Estoque, oculto no de Movimentações |
-| **Botão Imprimir** | Podia lançar `ArrayIndexOutOfBoundsException` se a tabela estivesse vazia | Verificação prévia evita o erro |
-| **Layout da Adição de produto** | Label de resultado sobreposto ao botão | Ajustado para não sobrepor |
-| **Relatório de Movimentações (com filtros)** | `JOIN` com `produtos` excluía movimentações de produtos deletados | `LEFT JOIN` preserva histórico |
-| **Pesquisa por nome** | Sensível a maiúsculas/minúsculas | Case‑insensitive (`LOWER`) |
-| **Persistência** | Microsoft Access (UCanAccess) | **SQL Server** (Microsoft SQL Server) |
+| **Preço dos produtos** | Preço não era registrado nas movimentações | Cada movimentação armazena o preço unitário praticado no momento |
+| **Valor do estoque histórico** | Relatórios usavam apenas o preço atual do cadastro | Relatórios utilizam o último preço registrado até a data do filtro, refletindo o valor real da época |
+| **Transações** | Operações de escrita podiam deixar inconsistências em caso de falha | Transações atômicas garantem que estoque e movimentação sejam confirmados ou desfeitos juntos |
+| **Data/hora das movimentações** | Usava `LocalDateTime.now()` da máquina cliente | Utiliza `GETDATE()` do SQL Server, centralizado e confiável |
+| **Aba Movimentações** | Exigia seleção de Dia/Mês/Ano e formato específico | Campo único com parser flexível (`d-M-yyyy`, `M-yyyy`, `yyyy`) |
+| **Tratamento de erros SQL** | Apenas `printStackTrace`, silencioso para o usuário | Erros de banco propagam `RuntimeException` e exibem mensagem na interface |
+| **Layout da aba Relatórios** | Filtros competiam por espaço com a tabela | Filtros fixos no topo, tabela expansível no centro |
+| **Busca por código de barras** | `ResultSet` não fechado explicitamente | Fechamento garantido com `try` interno |
+| **Limpeza do formulário** | Campos de fardo não eram escondidos ao limpar | Campos de fardo são ocultados corretamente |
+| **Histórico de movimentações com filtros** | `JOIN` com `produtos` excluía movimentações de produtos deletados | `LEFT JOIN` preserva o histórico |
+
+*(As demais funcionalidades já listadas anteriormente permanecem.)*
 
 ---
 
@@ -67,8 +70,8 @@ src/
 lib/
 └── mssql-jdbc-12.4.2.jre8.jar
 
-
 ```
+
 
 ---
 
@@ -97,13 +100,13 @@ O banco e as tabelas são criados automaticamente na primeira execução.
 
 ## 📝 Últimas Atualizações (detalhadas)
 
-- **Categorias de produtos:** nova classe `Categoria`, tabela `categorias`, aba de gerenciamento e integração com adição, listagem e relatórios.
-- **Relatório de Estado do Estoque redesenhado:** agora mostra todos os produtos (com ou sem movimentações), com renderizador que pinta de vermelho os zerados e checkbox "Apenas zerados" para filtrar.
-- **Filtros inteligentes nos relatórios:** busca por nome case‑insensitive e por categoria (combo).
-- **Datas flexíveis aprimoradas:** parse aceita dia e mês com um ou dois dígitos (`1-6-2026` ou `01-06-2026`).
-- **Tratamento de erros SQL:** todos os métodos do controller agora registram no console (`System.err`) o nome do método e a mensagem de erro, facilitando a depuração.
-- **Melhorias na GUI:** layout corrigido na adição de produto, checkbox "Apenas zerados" oculto ao selecionar "Movimentações", proteção no botão Imprimir contra tabela vazia.
-- **Migração do banco de dados:** de Microsoft Access (UCanAccess) para **Microsoft SQL Server**, oferecendo maior robustez e suporte a múltiplos acessos (dependendo da edição).
+- **Histórico de preços:** o preço unitário agora é armazenado em cada movimentação; os relatórios de estado do estoque exibem o último preço registrado até a data do filtro (ou o preço cadastral, se não houver movimentação anterior).
+- **Transações atômicas:** os métodos `adicionarProduto`, `removerQuantidade`, `adicionarQuantidade` e `adicionarFardos` executam todas as operações dentro de uma transação com `commit`/`rollback`, garantindo que nenhum dado fique inconsistente em caso de falha.
+- **Data/hora do servidor (`GETDATE()`):** todas as movimentações passaram a usar a função `GETDATE()` do SQL Server, eliminando divergências causadas por relógios incorretos nas máquinas clientes.
+- **Aba Movimentações unificada:** removidos os radio buttons Dia/Mês/Ano; agora um único campo de data com parser flexível aceita `d-M-yyyy`, `M-yyyy` ou `yyyy` e filtra as movimentações correspondentes.
+- **Melhorias na interface:** filtros da aba Relatórios reposicionados para o topo (fixos), tabela ocupa o centro; altura dos filtros não é mais fixa, adaptando-se a novos componentes futuros.
+- **Correções de bugs:** ajustado o método `buscarProdutoPorCodigoBarras` para definir o parâmetro antes de executar a consulta; tratamento adequado de `ResultSet` não fechado.
+- **Limpeza do formulário de adição:** campos de "Quantidade de Fardos" agora são ocultados corretamente ao limpar o formulário após adicionar um produto do tipo fardo.
 
 ---
 
