@@ -36,9 +36,11 @@ import estoque.controller.EstoqueController;
 import estoque.model.Categoria;
 import estoque.model.Movimentacao;
 import estoque.model.Produto;
+import estoque.model.ProdutoMovimento;
 import estoque.model.ProdutoSaldo;
 
 public class EstoqueGUI extends JFrame {
+	
 	private JComboBox<Categoria> cbFiltroCategoria;
 	private JComboBox<Categoria> cbCategoriaAdicionar;
 	private JComboBox<String> cbOrdenacaoListar;
@@ -64,6 +66,8 @@ public class EstoqueGUI extends JFrame {
 	private JLabel lblResultadoRemover;
 	private JTextField tfPrecoUnitario;
 
+	private static final java.util.Locale LOCALE_BR = new java.util.Locale("pt", "BR");
+	
 	public EstoqueGUI() {
 		controller = new EstoqueController();
 		initComponents();
@@ -244,7 +248,7 @@ public class EstoqueGUI extends JFrame {
 		lista.sort(Comparator.comparing(Produto::getNome, String.CASE_INSENSITIVE_ORDER));
 
 		tableModelEstado.setRowCount(0);
-		NumberFormat nf = NumberFormat.getCurrencyInstance(new java.util.Locale("pt", "BR"));
+		NumberFormat nf = NumberFormat.getCurrencyInstance(LOCALE_BR);
 		for (Produto p : lista) {
 			BigDecimal preco = p.getPrecoUnitario();
 			String precoStr = "-";
@@ -755,18 +759,24 @@ public class EstoqueGUI extends JFrame {
 				if (qtd <= 0) throw new Exception("Quantidade deve ser positiva.");
 
 				if (rbEntradaFardo.isSelected()) {
-					controller.adicionarFardos(produtoAtual[0], qtd);
-					lblMensagem.setText("Entrada de " + qtd + " fardo(s) registrada! Novo total: " + produtoAtual[0].getTotalUnidades() + " unidade(s)");
+				    controller.adicionarFardos(produtoAtual[0], qtd);
 				} else if (rbEntradaUnidade.isSelected()) {
-					controller.adicionarQuantidade(produtoAtual[0], qtd);
-					lblMensagem.setText("Entrada de " + qtd + " unidade(s) registrada! Novo total: " + produtoAtual[0].getTotalUnidades() + " unidade(s)");
+				    controller.adicionarQuantidade(produtoAtual[0], qtd);
 				} else {
-					boolean ok = controller.removerQuantidade(produtoAtual[0], qtd);
-					if (ok) {
-						lblMensagem.setText("Saída registrada! Estoque atual: " + produtoAtual[0].getTotalUnidades() + " unidade(s)");
-					} else {
-						lblMensagem.setText("Estoque insuficiente.");
-					}
+				    boolean ok = controller.removerQuantidade(produtoAtual[0], qtd);
+				    if (!ok) {
+				        lblMensagem.setText("Estoque insuficiente.");
+				        // Não atualiza tabelas e não busca novo total, pois não houve alteração
+				        return;
+				    }
+				}
+
+				// 🆕 Busca o produto atualizado do banco para exibir o estoque real
+				Produto atualizado = controller.buscarProdutoPorCodigoBarras(produtoAtual[0].getCodigoBarras());
+				if (atualizado != null) {
+				    lblMensagem.setText("Operação registrada! Estoque atual: " + atualizado.getTotalUnidades() + " unidade(s)");
+				} else {
+				    lblMensagem.setText("Operação registrada!");
 				}
 
 				atualizarTabelaProdutos();
@@ -790,311 +800,411 @@ public class EstoqueGUI extends JFrame {
 
 	// ==================== 7. RELATÓRIOS ====================
 	private JPanel criarPainelRelatorios() {
-		JPanel panel = new JPanel(new BorderLayout(10, 10));
+	    JPanel panel = new JPanel(new BorderLayout(10, 10));
 
-		JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
-		JRadioButton rbMovimentacoes = new JRadioButton("Movimentações");
-		JRadioButton rbEstado = new JRadioButton("Estado do Estoque");
-		ButtonGroup bgTipo = new ButtonGroup();
-		bgTipo.add(rbMovimentacoes);
-		bgTipo.add(rbEstado);
-		rbMovimentacoes.setSelected(true);
-		topPanel.add(rbMovimentacoes);
-		topPanel.add(rbEstado);
+	    JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+	    JRadioButton rbMovimentacoes = new JRadioButton("Movimentações");
+	    JRadioButton rbEstado = new JRadioButton("Estado do Estoque");
+	    ButtonGroup bgTipo = new ButtonGroup();
+	    bgTipo.add(rbMovimentacoes);
+	    bgTipo.add(rbEstado);
+	    rbMovimentacoes.setSelected(true);
+	    topPanel.add(rbMovimentacoes);
+	    topPanel.add(rbEstado);
+	    
 
-		JPanel filtroPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
-		JLabel lblInicio = new JLabel("Data Início:");
-		JTextField tfInicio = new JTextField(12);
-		tfInicio.setToolTipText("d-M-yyyy (dia), M-yyyy (mês) ou yyyy (ano)");
-		JLabel lblFim = new JLabel("Data Fim:");
-		JTextField tfFim = new JTextField(12);
-		tfFim.setToolTipText("d-M-yyyy (dia), M-yyyy (mês) ou yyyy (ano)");
-		filtroPanel.setPreferredSize(new java.awt.Dimension(filtroPanel.getPreferredSize().width, 70));
+	    JPanel filtroPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+	    filtroPanel.setPreferredSize(new java.awt.Dimension(filtroPanel.getPreferredSize().width, 70));
+	    JLabel lblInicio = new JLabel("Data Início:");
+	    JTextField tfInicio = new JTextField(12);
+	    tfInicio.setToolTipText("d-M-yyyy (dia), M-yyyy (mês) ou yyyy (ano)");
+	    JLabel lblFim = new JLabel("Data Fim:");
+	    JTextField tfFim = new JTextField(12);
+	    tfFim.setToolTipText("d-M-yyyy (dia), M-yyyy (mês) ou yyyy (ano)");
+	   
 
-		JLabel lblNomeFiltro = new JLabel("Nome:");
-		JTextField tfFiltroNome = new JTextField(12);
-		tfFiltroNome.setToolTipText("Deixe em branco para listar todos os produtos");
-		JLabel lblCatFiltro = new JLabel("Categoria:");
-		cbFiltroCategoria = new JComboBox<>();
-		cbFiltroCategoria.addItem(new Categoria(0, "Todas"));
-		for (Categoria c : controller.listarCategorias()) {
-			cbFiltroCategoria.addItem(c);
-		}
+	    JLabel lblNomeFiltro = new JLabel("Nome:");
+	    JTextField tfFiltroNome = new JTextField(12);
+	    tfFiltroNome.setToolTipText("Deixe em branco para listar todos os produtos");
+	    JLabel lblCatFiltro = new JLabel("Categoria:");
+	    cbFiltroCategoria = new JComboBox<>();
+	    cbFiltroCategoria.addItem(new Categoria(0, "Todas"));
+	    for (Categoria c : controller.listarCategorias()) {
+	        cbFiltroCategoria.addItem(c);
+	    }
 
-		JCheckBox chkZerados = new JCheckBox("Apenas zerados");
-		chkZerados.setVisible(false);
-		JButton btnGerar = new JButton("Gerar Relatório");
-		JButton btnImprimir = new JButton("Imprimir");
-		JButton btnExportar = new JButton("Exportar CSV");
+	    JCheckBox chkZerados = new JCheckBox("Apenas zerados");
+	    chkZerados.setVisible(false);
+	    JButton btnGerar = new JButton("Gerar Relatório");
+	    JButton btnImprimir = new JButton("Imprimir");
+	    JButton btnExportar = new JButton("Exportar CSV");
 
-		filtroPanel.add(lblInicio);
-		filtroPanel.add(tfInicio);
-		filtroPanel.add(lblFim);
-		filtroPanel.add(tfFim);
-		filtroPanel.add(lblNomeFiltro);
-		filtroPanel.add(tfFiltroNome);
-		filtroPanel.add(lblCatFiltro);
-		filtroPanel.add(cbFiltroCategoria);
-		filtroPanel.add(chkZerados);
-		filtroPanel.add(btnGerar);
-		filtroPanel.add(btnImprimir);
-		filtroPanel.add(btnExportar);
+	    filtroPanel.add(lblInicio);
+	    filtroPanel.add(tfInicio);
+	    filtroPanel.add(lblFim);
+	    filtroPanel.add(tfFim);
+	    filtroPanel.add(lblNomeFiltro);
+	    filtroPanel.add(tfFiltroNome);
+	    filtroPanel.add(lblCatFiltro);
+	    filtroPanel.add(cbFiltroCategoria);
+	    filtroPanel.add(chkZerados);
+	    filtroPanel.add(btnGerar);
+	    filtroPanel.add(btnImprimir);
+	    filtroPanel.add(btnExportar);
 
-		DefaultTableModel tableModel = new DefaultTableModel();
-		JTable table = new JTable(tableModel);
-		table.setDefaultEditor(Object.class, null);
-		JScrollPane scrollPane = new JScrollPane(table);
+	    DefaultTableModel tableModel = new DefaultTableModel();
+	    JTable table = new JTable(tableModel);
+	    table.setDefaultEditor(Object.class, null);
+	    JScrollPane scrollPane = new JScrollPane(table);
+	    
+	 // 🆕 Painel de totais (inicialmente oculto)
+	    JPanel painelTotais = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 5));
+	    JLabel lblTotalEntradas = new JLabel("Entradas: R$ 0,00");
+	    JLabel lblTotalSaidas = new JLabel("Saídas: R$ 0,00");
+	    JLabel lblTotalLiquido = new JLabel("Líquido: R$ 0,00");
+	    painelTotais.add(lblTotalEntradas);
+	    painelTotais.add(lblTotalSaidas);
+	    painelTotais.add(lblTotalLiquido);
+	    painelTotais.setVisible(false);
 
-		rbMovimentacoes.addActionListener(e -> {
-			lblFim.setVisible(true);
-			tfFim.setVisible(true);
-			chkZerados.setVisible(false);
-		});
-		rbEstado.addActionListener(e -> {
-			lblFim.setVisible(false);
-			tfFim.setVisible(false);
-			chkZerados.setVisible(true);
-		});
+	    rbMovimentacoes.addActionListener(e -> {
+	        lblFim.setVisible(true);
+	        tfFim.setVisible(true);
+	        chkZerados.setVisible(false);
+	    });
+	    rbEstado.addActionListener(e -> {
+	        lblFim.setVisible(true);   // agora fica visível (opcional)
+	        tfFim.setVisible(true);    // idem
+	        chkZerados.setVisible(true);
+	    });
 
-		btnGerar.addActionListener(e -> {
-			try {
-				String nomeFiltro = tfFiltroNome.getText().trim();
-				Categoria catSel = (Categoria) cbFiltroCategoria.getSelectedItem();
-				Integer catId = (catSel != null && catSel.getId() != 0) ? catSel.getId() : null;
-				boolean apenasZerados = chkZerados.isSelected();
+	    btnGerar.addActionListener(e -> {
+	        try {
+	        	painelTotais.setVisible(false);
+	            String nomeFiltro = tfFiltroNome.getText().trim();
+	            Categoria catSel = (Categoria) cbFiltroCategoria.getSelectedItem();
+	            Integer catId = (catSel != null && catSel.getId() != 0) ? catSel.getId() : null;
+	            boolean apenasZerados = chkZerados.isSelected();
 
-				if (rbMovimentacoes.isSelected()) {
-					String inicioStr = tfInicio.getText().trim();
-					String fimStr = tfFim.getText().trim();
+	            if (rbMovimentacoes.isSelected()) {
+	                // Relatório de Movimentações (período) – inalterado
+	                String inicioStr = tfInicio.getText().trim();
+	                String fimStr = tfFim.getText().trim();
 
-					if (inicioStr.isEmpty() || fimStr.isEmpty()) {
-						JOptionPane.showMessageDialog(panel,
-								"Informe os dois campos de data (formato d-M-yyyy, M-yyyy ou yyyy).",
-								"Campos obrigatórios", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
+	                if (inicioStr.isEmpty() || fimStr.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "Informe os dois campos de data (formato d-M-yyyy, M-yyyy ou yyyy).",
+	                            "Campos obrigatórios", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
 
-					LocalDate[] intervaloInicio = parseDataFlexivel(inicioStr);
-					LocalDate[] intervaloFim = parseDataFlexivel(fimStr);
+	                LocalDate[] intervaloInicio = parseDataFlexivel(inicioStr);
+	                LocalDate[] intervaloFim = parseDataFlexivel(fimStr);
 
-					if (intervaloInicio == null || intervaloFim == null) {
-						JOptionPane.showMessageDialog(panel,
-								"Formato de data inválido. Use d-M-yyyy, M-yyyy ou yyyy.",
-								"Erro", JOptionPane.ERROR_MESSAGE);
-						return;
-					}
+	                if (intervaloInicio == null || intervaloFim == null) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "Formato de data inválido. Use d-M-yyyy, M-yyyy ou yyyy.",
+	                            "Erro", JOptionPane.ERROR_MESSAGE);
+	                    return;
+	                }
 
-					LocalDate dataInicial = intervaloInicio[0];
-					LocalDate dataFinal = intervaloFim[1];
+	                LocalDate dataInicial = intervaloInicio[0];
+	                LocalDate dataFinal = intervaloFim[1];
 
-					if (dataInicial.isAfter(dataFinal)) {
-						JOptionPane.showMessageDialog(panel,
-								"A data inicial não pode ser maior que a final.",
-								"Período inválido", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
-					if (dataFinal.isAfter(LocalDate.now())) {
-						JOptionPane.showMessageDialog(panel,
-								"A data final não pode ser futura.",
-								"Data inválida", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
+	                if (dataInicial.isAfter(dataFinal)) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "A data inicial não pode ser maior que a final.",
+	                            "Período inválido", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
+	                if (dataFinal.isAfter(LocalDate.now())) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "A data final não pode ser futura.",
+	                            "Data inválida", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
 
-					List<Movimentacao> movs = controller.getMovimentacoesPorPeriodo(
-							dataInicial, dataFinal,
-							nomeFiltro.isEmpty() ? null : nomeFiltro,
-							catId);
-					String[] colunas = {"Data/Hora", "Produto", "Tipo", "Quantidade", "Descrição"};
-					tableModel.setColumnIdentifiers(colunas);
-					tableModel.setRowCount(0);
-					DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
-					for (Movimentacao m : movs) {
-						tableModel.addRow(new Object[]{
-								m.getDataHora().format(fmt),
-								m.getProdutoNome(),
-								m.getTipo(),
-								m.getQuantidadeUnidades(),
-								m.getDescricao()
-						});
-					}
-					if (movs.isEmpty()) {
-						JOptionPane.showMessageDialog(panel,
-								"Nenhuma movimentação encontrada no período.",
-								"Informação", JOptionPane.INFORMATION_MESSAGE);
-					}
-				} else {
-					String dataStr = tfInicio.getText().trim();
-					if (dataStr.isEmpty()) {
-						JOptionPane.showMessageDialog(panel,
-								"Informe uma data (formato d-M-yyyy, M-yyyy ou yyyy).",
-								"Data obrigatória", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
+	                List<Movimentacao> movs = controller.getMovimentacoesPorPeriodo(
+	                        dataInicial, dataFinal,
+	                        nomeFiltro.isEmpty() ? null : nomeFiltro,
+	                        catId);
+	                String[] colunas = {"Data/Hora", "Produto", "Tipo", "Quantidade", "Descrição"};
+	                tableModel.setColumnIdentifiers(colunas);
+	                tableModel.setRowCount(0);
+	                DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
+	                for (Movimentacao m : movs) {
+	                    tableModel.addRow(new Object[]{
+	                            m.getDataHora().format(fmt),
+	                            m.getProdutoNome(),
+	                            m.getTipo(),
+	                            m.getQuantidadeUnidades(),
+	                            m.getDescricao()
+	                    });
+	                }
+	                if (movs.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "Nenhuma movimentação encontrada no período.",
+	                            "Informação", JOptionPane.INFORMATION_MESSAGE);
+	                }
+	            } else {
+	                // ===== RELATÓRIO DE ESTADO DO ESTOQUE (DATA OU PERÍODO) =====
+	                String dataStr = tfInicio.getText().trim();
+	                String fimStr = tfFim.getText().trim();
 
-					LocalDate[] intervalo = parseDataFlexivel(dataStr);
-					if (intervalo == null) {
-						JOptionPane.showMessageDialog(panel,
-								"Formato de data inválido. Use d-M-yyyy, M-yyyy ou yyyy.",
-								"Erro", JOptionPane.ERROR_MESSAGE);
-						return;
-					}
+	                if (dataStr.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "Informe uma data (formato d-M-yyyy, M-yyyy ou yyyy).",
+	                            "Data obrigatória", JOptionPane.WARNING_MESSAGE);
+	                    return;
+	                }
 
-					LocalDate dataReferencia = intervalo[1];
+	                LocalDate[] intervaloInicio = parseDataFlexivel(dataStr);
+	                if (intervaloInicio == null) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "Formato de data inválido. Use d-M-yyyy, M-yyyy ou yyyy.",
+	                            "Erro", JOptionPane.ERROR_MESSAGE);
+	                    return;
+	                }
+	                LocalDate dataReferencia = intervaloInicio[1];
 
-					if (dataReferencia.isAfter(LocalDate.now())) {
-						JOptionPane.showMessageDialog(panel,
-								"A data não pode ser futura.",
-								"Data inválida", JOptionPane.WARNING_MESSAGE);
-						return;
-					}
+	                // Verifica se a data fim foi preenchida
+	                if (!fimStr.isEmpty()) {
+	                    // MODO PERÍODO (movimento)
+	                    LocalDate[] intervaloFim = parseDataFlexivel(fimStr);
+	                    if (intervaloFim == null) {
+	                        JOptionPane.showMessageDialog(panel,
+	                                "Formato de data fim inválido. Use d-M-yyyy, M-yyyy ou yyyy.",
+	                                "Erro", JOptionPane.ERROR_MESSAGE);
+	                        return;
+	                    }
+	                    LocalDate dataFim = intervaloFim[1];
 
-					List<ProdutoSaldo> saldos = controller.getEstadoEstoqueNaData(
-							dataReferencia,
-							nomeFiltro.isEmpty() ? null : nomeFiltro,
-							catId,
-							apenasZerados);
+	                    if (dataReferencia.isAfter(dataFim)) {
+	                        JOptionPane.showMessageDialog(panel,
+	                                "A data inicial não pode ser maior que a final.",
+	                                "Período inválido", JOptionPane.WARNING_MESSAGE);
+	                        return;
+	                    }
+	                    if (dataFim.isAfter(LocalDate.now())) {
+	                        JOptionPane.showMessageDialog(panel,
+	                                "A data final não pode ser futura.",
+	                                "Data inválida", JOptionPane.WARNING_MESSAGE);
+	                        return;
+	                    }
 
-					String[] colunas = {"Código", "Nome", "Fardos", "Unid. Avulsas", "Total Unid.", "Preço Unit.", "Valor Total"};
-					tableModel.setColumnIdentifiers(colunas);
-					tableModel.setRowCount(0);
+	                    // Consulta o movimento no período
+	                    List<ProdutoMovimento> movs = controller.getMovimentoNoPeriodo(
+	                            dataReferencia, dataFim,
+	                            nomeFiltro.isEmpty() ? null : nomeFiltro,
+	                            catId);
 
-					NumberFormat nf = NumberFormat.getCurrencyInstance(new java.util.Locale("pt", "BR"));
-					for (ProdutoSaldo ps : saldos) {
-						String precoStr = ps.getPrecoUnitario() != null ? nf.format(ps.getPrecoUnitario()) : "-";
-						String valorStr = ps.getValorTotal() != null ? nf.format(ps.getValorTotal()) : "-";
-						tableModel.addRow(new Object[]{
-								ps.getCodigoBarras(),
-								ps.getNome(),
-								ps.getFardos(),
-								ps.getUnidadesAvulsas(),
-								ps.getTotalUnidades(),
-								precoStr,
-								valorStr
-						});
-					}
+	                    String[] colunas = {"Código", "Nome", "Entradas", "Saídas", "Saldo Líq.", "V. Entradas", "V. Saídas", "V. Líquido"};
+	                    tableModel.setColumnIdentifiers(colunas);
+	                    tableModel.setRowCount(0);
 
-					table.setDefaultRenderer(Object.class, new javax.swing.table.DefaultTableCellRenderer() {
-						@Override
-						public java.awt.Component getTableCellRendererComponent(JTable table, Object value,
-								boolean isSelected, boolean hasFocus, int row, int column) {
-							java.awt.Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-							if (table.getColumnCount() > 4 && "Total Unid.".equals(table.getColumnName(4))) {
-								Object totalObj = table.getModel().getValueAt(row, 4);
-								if (totalObj instanceof Integer) {
-									int total = (Integer) totalObj;
-									if (total == 0) {
-										c.setForeground(java.awt.Color.RED);
-										if (!isSelected) {
-											c.setBackground(new java.awt.Color(255, 230, 230));
-										}
-									} else {
-										c.setForeground(java.awt.Color.BLACK);
-										c.setBackground(isSelected ? table.getSelectionBackground() : java.awt.Color.WHITE);
-									}
-								}
-							}
-							return c;
-						}
-					});
+	                    NumberFormat nf = NumberFormat.getCurrencyInstance(LOCALE_BR);
+	                    for (ProdutoMovimento pm : movs) {
+	                        String valEntStr = pm.getValorEntradas() != null ? nf.format(pm.getValorEntradas()) : "-";
+	                        String valSaiStr = pm.getValorSaidas() != null ? nf.format(pm.getValorSaidas()) : "-";
+	                        String valLiqStr = pm.getValorLiquido() != null ? nf.format(pm.getValorLiquido()) : "-";
+	                        tableModel.addRow(new Object[]{
+	                                pm.getCodigoBarras(),
+	                                pm.getNome(),
+	                                pm.getTotalEntradas(),
+	                                pm.getTotalSaidas(),
+	                                pm.getSaldoLiquido(),
+	                                valEntStr,
+	                                valSaiStr,
+	                                valLiqStr
+	                        });
+	                    }
+	                    
+	                 // 🆕 Cálculo e exibição dos totais
+	                    BigDecimal somaEntradas = BigDecimal.ZERO;
+	                    BigDecimal somaSaidas = BigDecimal.ZERO;
+	                    BigDecimal somaLiquido = BigDecimal.ZERO;
 
-					if (saldos.isEmpty()) {
-						JOptionPane.showMessageDialog(panel,
-								"Nenhum produto encontrado.",
-								"Informação", JOptionPane.INFORMATION_MESSAGE);
-					}
-				}
-			} catch (DateTimeParseException ex) {
-				JOptionPane.showMessageDialog(panel,
-						"Formato de data inválido. Use os formatos indicados.",
-						"Erro", JOptionPane.ERROR_MESSAGE);
-			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(panel,
-						"Erro ao gerar relatório: " + ex.getMessage(),
-						"Erro", JOptionPane.ERROR_MESSAGE);
-			}
-		});
+	                    for (ProdutoMovimento pm : movs) {
+	                        if (pm.getValorEntradas() != null) somaEntradas = somaEntradas.add(pm.getValorEntradas());
+	                        if (pm.getValorSaidas() != null)   somaSaidas   = somaSaidas.add(pm.getValorSaidas());
+	                        if (pm.getValorLiquido() != null)  somaLiquido  = somaLiquido.add(pm.getValorLiquido());
+	                    }
 
-		btnImprimir.addActionListener(e -> {
-			if (table.getColumnCount() < 2) {
-				JOptionPane.showMessageDialog(panel,
-						"Gere um relatório antes de imprimir.",
-						"Aviso", JOptionPane.WARNING_MESSAGE);
-				return;
-			}
-			java.awt.Font originalFont = table.getFont();
-			int originalWidthCodigo = table.getColumnModel().getColumn(0).getPreferredWidth();
-			int originalWidthNome = table.getColumnModel().getColumn(1).getPreferredWidth();
-			try {
-				table.setFont(originalFont.deriveFont(18f));
-				table.getColumnModel().getColumn(0).setPreferredWidth(150);
-				table.getColumnModel().getColumn(1).setPreferredWidth(250);
+	                    
+	                    lblTotalEntradas.setText("Entradas: " + nf.format(somaEntradas));
+	                    lblTotalSaidas.setText("Saídas: " + nf.format(somaSaidas));
+	                    lblTotalLiquido.setText("Líquido: " + nf.format(somaLiquido));
+	                    painelTotais.setVisible(true);
 
-				java.awt.print.PrinterJob job = java.awt.print.PrinterJob.getPrinterJob();
-				job.setJobName("Relatório de Estoque");
-				java.awt.print.PageFormat format = job.defaultPage();
-				format.setOrientation(java.awt.print.PageFormat.LANDSCAPE);
-				java.awt.print.Paper paper = format.getPaper();
-				paper.setImageableArea(30, 30, paper.getWidth() - 60, paper.getHeight() - 60);
-				format.setPaper(paper);
-				job.setPrintable(table.getPrintable(javax.swing.JTable.PrintMode.FIT_WIDTH, null, null), format);
+	                    if (movs.isEmpty()) {
+	                        JOptionPane.showMessageDialog(panel,
+	                                "Nenhum produto encontrado no período.",
+	                                "Informação", JOptionPane.INFORMATION_MESSAGE);
+	                    }
+	                } else {
+	                    // MODO DATA ÚNICA (estoque na data) – comportamento original
+	                    if (dataReferencia.isAfter(LocalDate.now())) {
+	                        JOptionPane.showMessageDialog(panel,
+	                                "A data não pode ser futura.",
+	                                "Data inválida", JOptionPane.WARNING_MESSAGE);
+	                        return;
+	                    }
 
-				if (job.printDialog()) {
-					job.print();
-				}
-			} catch (java.awt.print.PrinterException ex) {
-				JOptionPane.showMessageDialog(panel, "Erro ao imprimir: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
-			} finally {
-				table.getColumnModel().getColumn(0).setPreferredWidth(originalWidthCodigo);
-				table.getColumnModel().getColumn(1).setPreferredWidth(originalWidthNome);
-				table.setFont(originalFont);
-			}
-		});
+	                    List<ProdutoSaldo> saldos = controller.getEstadoEstoqueNaData(
+	                            dataReferencia,
+	                            nomeFiltro.isEmpty() ? null : nomeFiltro,
+	                            catId,
+	                            apenasZerados);
 
-		btnExportar.addActionListener(e -> {
-			JFileChooser fileChooser = new JFileChooser();
-			fileChooser.setSelectedFile(new java.io.File("relatorio.csv"));
-			int result = fileChooser.showSaveDialog(panel);
-			if (result == JFileChooser.APPROVE_OPTION) {
-				java.io.File arquivo = fileChooser.getSelectedFile();
-				try (java.io.PrintWriter pw = new java.io.PrintWriter(
-						new java.io.OutputStreamWriter(
-								new java.io.FileOutputStream(arquivo), java.nio.charset.StandardCharsets.UTF_8))) {
-					pw.print('\uFEFF');
+	                    String[] colunas = {"Código", "Nome", "Fardos", "Unid. Avulsas", "Total Unid.", "Preço Unit.", "Valor Total"};
+	                    tableModel.setColumnIdentifiers(colunas);
+	                    tableModel.setRowCount(0);
 
-					for (int i = 0; i < tableModel.getColumnCount(); i++) {
-						pw.print(tableModel.getColumnName(i));
-						if (i < tableModel.getColumnCount() - 1) pw.print(";");
-					}
-					pw.println();
+	                    NumberFormat nf = NumberFormat.getCurrencyInstance(LOCALE_BR);
+	                    for (ProdutoSaldo ps : saldos) {
+	                        String precoStr = ps.getPrecoUnitario() != null ? nf.format(ps.getPrecoUnitario()) : "-";
+	                        String valorStr = ps.getValorTotal() != null ? nf.format(ps.getValorTotal()) : "-";
+	                        tableModel.addRow(new Object[]{
+	                                ps.getCodigoBarras(),
+	                                ps.getNome(),
+	                                ps.getFardos(),
+	                                ps.getUnidadesAvulsas(),
+	                                ps.getTotalUnidades(),
+	                                precoStr,
+	                                valorStr
+	                        });
+	                    }
 
-					for (int row = 0; row < tableModel.getRowCount(); row++) {
-						for (int col = 0; col < tableModel.getColumnCount(); col++) {
-							Object valor = tableModel.getValueAt(row, col);
-							String texto = valor != null ? valor.toString() : "";
-							if (col == 0) {
-								pw.print("\t" + texto);
-							} else {
-								pw.print(texto);
-							}
-							if (col < tableModel.getColumnCount() - 1) pw.print(";");
-						}
-						pw.println();
-					}
-					JOptionPane.showMessageDialog(panel, "Arquivo salvo com sucesso!");
-				} catch (Exception ex) {
-					JOptionPane.showMessageDialog(panel, "Erro ao exportar: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
-				}
-			}
-		});
+	                    // Renderizador de zerados (apenas para modo data única)
+	                    table.setDefaultRenderer(Object.class, new javax.swing.table.DefaultTableCellRenderer() {
+	                        @Override
+	                        public java.awt.Component getTableCellRendererComponent(JTable table, Object value,
+	                                boolean isSelected, boolean hasFocus, int row, int column) {
+	                            java.awt.Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+	                            if (table.getColumnCount() > 4 && "Total Unid.".equals(table.getColumnName(4))) {
+	                                Object totalObj = table.getModel().getValueAt(row, 4);
+	                                if (totalObj instanceof Integer) {
+	                                    int total = (Integer) totalObj;
+	                                    if (total == 0) {
+	                                        c.setForeground(java.awt.Color.RED);
+	                                        if (!isSelected) {
+	                                            c.setBackground(new java.awt.Color(255, 230, 230));
+	                                        }
+	                                    } else {
+	                                        c.setForeground(java.awt.Color.BLACK);
+	                                        c.setBackground(isSelected ? table.getSelectionBackground() : java.awt.Color.WHITE);
+	                                    }
+	                                }
+	                            }
+	                            return c;
+	                        }
+	                    });
 
-		// Painel central que vai conter os filtros (em cima) e a tabela (embaixo)
-		JPanel centerPanel = new JPanel(new BorderLayout());
-		centerPanel.add(filtroPanel, BorderLayout.NORTH);
-		centerPanel.add(scrollPane, BorderLayout.CENTER);
+	                    if (saldos.isEmpty()) {
+	                        JOptionPane.showMessageDialog(panel,
+	                                "Nenhum produto encontrado.",
+	                                "Informação", JOptionPane.INFORMATION_MESSAGE);
+	                    }
+	                }
+	            }
+	        } catch (DateTimeParseException ex) {
+	            JOptionPane.showMessageDialog(panel,
+	                    "Formato de data inválido. Use os formatos indicados.",
+	                    "Erro", JOptionPane.ERROR_MESSAGE);
+	        } catch (Exception ex) {
+	            JOptionPane.showMessageDialog(panel,
+	                    "Erro ao gerar relatório: " + ex.getMessage(),
+	                    "Erro", JOptionPane.ERROR_MESSAGE);
+	        }
+	    });
 
-		panel.add(topPanel, BorderLayout.NORTH);       // radio buttons no topo
-		panel.add(centerPanel, BorderLayout.CENTER);   // filtros + tabela no centro
-		return panel;
+	    btnImprimir.addActionListener(e -> {
+	        if (table.getColumnCount() < 2) {
+	            JOptionPane.showMessageDialog(panel,
+	                    "Gere um relatório antes de imprimir.",
+	                    "Aviso", JOptionPane.WARNING_MESSAGE);
+	            return;
+	        }
+	        java.awt.Font originalFont = table.getFont();
+	        int originalWidthCodigo = table.getColumnModel().getColumn(0).getPreferredWidth();
+	        int originalWidthNome = table.getColumnModel().getColumn(1).getPreferredWidth();
+	        try {
+	            table.setFont(originalFont.deriveFont(18f));
+	            table.getColumnModel().getColumn(0).setPreferredWidth(150);
+	            table.getColumnModel().getColumn(1).setPreferredWidth(250);
+
+	            java.awt.print.PrinterJob job = java.awt.print.PrinterJob.getPrinterJob();
+	            job.setJobName("Relatório de Estoque");
+	            java.awt.print.PageFormat format = job.defaultPage();
+	            format.setOrientation(java.awt.print.PageFormat.LANDSCAPE);
+	            java.awt.print.Paper paper = format.getPaper();
+	            paper.setImageableArea(30, 30, paper.getWidth() - 60, paper.getHeight() - 60);
+	            format.setPaper(paper);
+	            job.setPrintable(table.getPrintable(javax.swing.JTable.PrintMode.FIT_WIDTH, null, null), format);
+
+	            if (job.printDialog()) {
+	                job.print();
+	            }
+	        } catch (java.awt.print.PrinterException ex) {
+	            JOptionPane.showMessageDialog(panel, "Erro ao imprimir: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+	        } finally {
+	            table.getColumnModel().getColumn(0).setPreferredWidth(originalWidthCodigo);
+	            table.getColumnModel().getColumn(1).setPreferredWidth(originalWidthNome);
+	            table.setFont(originalFont);
+	        }
+	    });
+
+	    btnExportar.addActionListener(e -> {
+	        JFileChooser fileChooser = new JFileChooser();
+	        fileChooser.setSelectedFile(new java.io.File("relatorio.csv"));
+	        int result = fileChooser.showSaveDialog(panel);
+	        if (result == JFileChooser.APPROVE_OPTION) {
+	            java.io.File arquivo = fileChooser.getSelectedFile();
+	            try (java.io.PrintWriter pw = new java.io.PrintWriter(
+	                    new java.io.OutputStreamWriter(
+	                            new java.io.FileOutputStream(arquivo), java.nio.charset.StandardCharsets.UTF_8))) {
+	                pw.print('\uFEFF');
+
+	                for (int i = 0; i < tableModel.getColumnCount(); i++) {
+	                    pw.print(tableModel.getColumnName(i));
+	                    if (i < tableModel.getColumnCount() - 1) pw.print(";");
+	                }
+	                pw.println();
+
+	                for (int row = 0; row < tableModel.getRowCount(); row++) {
+	                    for (int col = 0; col < tableModel.getColumnCount(); col++) {
+	                        Object valor = tableModel.getValueAt(row, col);
+	                        String texto = valor != null ? valor.toString() : "";
+	                        if (col == 0) {
+	                            pw.print("\t" + texto);
+	                        } else {
+	                            pw.print(texto);
+	                        }
+	                        if (col < tableModel.getColumnCount() - 1) pw.print(";");
+	                    }
+	                    pw.println();
+	                }
+	                JOptionPane.showMessageDialog(panel, "Arquivo salvo com sucesso!");
+	            } catch (Exception ex) {
+	                JOptionPane.showMessageDialog(panel, "Erro ao exportar: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+	            }
+	        }
+	    });
+
+	 // Painel que agrupa radio buttons e filtros verticalmente
+	    JPanel topContainer = new JPanel();
+	    topContainer.setLayout(new javax.swing.BoxLayout(topContainer, javax.swing.BoxLayout.Y_AXIS));
+	    topContainer.add(topPanel);
+	    topContainer.add(filtroPanel);
+
+	    // Painel central com tabela e totais
+	    JPanel centerPanel = new JPanel(new BorderLayout());
+	    centerPanel.add(scrollPane, BorderLayout.CENTER);
+	    centerPanel.add(painelTotais, BorderLayout.SOUTH);
+
+	    panel.add(topContainer, BorderLayout.NORTH);
+	    panel.add(centerPanel, BorderLayout.CENTER);
+	    return panel;
 	}
 
 	private LocalDate[] parseDataFlexivel(String texto) throws DateTimeParseException {

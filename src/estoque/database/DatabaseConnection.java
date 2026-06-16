@@ -1,21 +1,61 @@
 package estoque.database;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.sql.*;
+import java.util.Properties;
 
 public class DatabaseConnection {
+	private static final Properties props = new Properties();
 
-    // Configurações do SQL Server (padrão local; no servidor, ajuste as variáveis de ambiente)
-    private static final String HOST = System.getenv().getOrDefault("DB_HOST", "localhost");
-    private static final String PORT = System.getenv().getOrDefault("DB_PORT", "1433");
-    private static final String DB_NAME = System.getenv().getOrDefault("DB_NAME", "estoque");
-    private static final String USER = System.getenv().getOrDefault("DB_USER", "estoque_app");
-    private static final String PASS = System.getenv().getOrDefault("DB_PASS", "123");
+	static {
+	    // 1. Tenta carregar de arquivo externo (mesma pasta do JAR) – TEM PRIORIDADE
+	    File externalFile = new File("config.properties");
+	    if (externalFile.exists()) {
+	        try (InputStream input = new FileInputStream(externalFile)) {
+	            props.load(input);
+	            System.out.println("Arquivo config.properties carregado da pasta do JAR.");
+	        } catch (IOException e) {
+	            System.err.println("Erro ao ler config.properties externo: " + e.getMessage());
+	        }
+	    } else {
+	        // 2. Se não encontrou externo, tenta classpath (dentro do JAR ou src)
+	        try (InputStream input = DatabaseConnection.class.getClassLoader().getResourceAsStream("config.properties")) {
+	            if (input != null) {
+	                props.load(input);
+	                System.out.println("Arquivo config.properties carregado do classpath.");
+	            } else {
+	                System.out.println("Arquivo config.properties não encontrado. Usando variáveis de ambiente ou padrões.");
+	            }
+	        } catch (IOException e) {
+	            System.err.println("Erro ao ler config.properties do classpath: " + e.getMessage());
+	        }
+	    }
+	}
+
+    // Método auxiliar: prioriza propriedade do arquivo > variável de ambiente > valor padrão
+    private static String get(String key, String defaultValue) {
+        String propValue = props.getProperty(key);
+        if (propValue != null) return propValue;
+
+        String envValue = System.getenv(key);
+        if (envValue != null) return envValue;
+
+        return defaultValue;
+    }
+
+    // Configurações do SQL Server (prioridade: arquivo .properties > variáveis de ambiente > padrão)
+    private static final String HOST = get("DB_HOST", "localhost");
+    private static final String PORT = get("DB_PORT", "1433");
+    private static final String DB_NAME = get("DB_NAME", "estoque");
+    private static final String USER = get("DB_USER", "estoque_app");
+    private static final String PASS = get("DB_PASS", "123");
 
     private static final String URL = String.format(
-        "jdbc:sqlserver://%s:%s;databaseName=%s;encrypt=false;trustServerCertificate=true;",
-        HOST, PORT, DB_NAME
-    );
-
+    	    "jdbc:jtds:sqlserver://%s:%s/%s", HOST, PORT, DB_NAME
+    	);
     // ========== CONEXÃO ==========
 
     public static Connection getConnection() throws SQLException {
@@ -89,6 +129,7 @@ public class DatabaseConnection {
             e.printStackTrace();
         }
     }
+
     // ========== VERIFICAÇÃO DE TABELA ==========
 
     private static boolean existeTabela(Connection conn, String nomeTabela) throws SQLException {
