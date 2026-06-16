@@ -93,7 +93,7 @@ DB_HOST=192.168.100.251
 DB_PORT=1434
 DB_NAME=estoque
 DB_USER=estoque_app
-DB_PASS=SenhaSegura123
+DB_PASS=ExemploDeSenha11
 
 ```
 
