@@ -98,8 +98,62 @@ lib/
 Crie um arquivo `config.properties` ao lado do JAR executável com o seguinte conteúdo:
 
 ```properties
-DB_HOST=192.168.100.251
-DB_PORT=1434
+DB_HOST=192.168.1.1 (ip do servidor onde está localizado o banco de dados)
+DB_PORT=1234 (porta)
 DB_NAME=estoque
 DB_USER=estoque_app
 DB_PASS=ExemploDeSenha11
+
+```
+
+
+    Se o arquivo não existir, o sistema tentará usar variáveis de ambiente (DB_HOST, DB_PORT, etc.).
+
+    Se também não houver variáveis, serão usados os valores padrão (localhost, 1433, estoque, estoque_app, 123).
+
+O banco e as tabelas são criados automaticamente na primeira execução.
+Compilando e executando
+
+    Importe o projeto no Eclipse.
+
+    Adicione o driver JDBC (jtds-1.3.1.jar) e as bibliotecas do JFreeChart ao Build Path.
+
+    Execute a classe Main como aplicação Java.
+
+Gerando JAR executável
+
+    Exporte como Runnable JAR file pelo Eclipse, marcando “Package required libraries into generated JAR”.
+
+    Coloque o arquivo config.properties na mesma pasta do JAR gerado.
+
+📝 Últimas Atualizações (detalhadas)
+
+    Histórico de preços: o preço unitário agora é armazenado em cada movimentação; os relatórios de estado do estoque exibem o último preço registrado até a data do filtro (ou o preço cadastral, se não houver movimentação anterior).
+
+    Transações atômicas: os métodos adicionarProduto, removerQuantidade, adicionarQuantidade e adicionarFardos executam todas as operações dentro de uma transação com commit/rollback, garantindo que nenhum dado fique inconsistente em caso de falha.
+
+    Data/hora do servidor (GETDATE()): todas as movimentações passaram a usar a função GETDATE() do SQL Server, eliminando divergências causadas por relógios incorretos nas máquinas clientes.
+
+    Aba Movimentações unificada: removidos os radio buttons Dia/Mês/Ano; agora um único campo de data com parser flexível aceita d‑M‑yyyy, M‑yyyy ou yyyy e filtra as movimentações correspondentes.
+
+    Melhorias na interface: filtros da aba Relatórios reposicionados para o topo (fixos), tabela ocupa o centro; altura dos filtros não é mais fixa, adaptando‑se a novos componentes futuros.
+
+    Gráficos com JFreeChart: adicionados três modos de visualização na aba Relatórios:
+
+        Gráfico Preços (produto único): selecione um produto na tabela e veja a evolução do preço unitário no período.
+
+        Gráfico por Categoria – Preço Unitário: uma linha colorida para cada produto da categoria, mostrando a variação do preço unitário.
+
+        Gráfico por Categoria – Valor Gasto: total gasto (entradas) por mês na categoria selecionada. Meses sem movimento são preenchidos com zero, gerando uma linha contínua no gráfico.
+
+    Correções de bugs: ajustado o método buscarProdutoPorCodigoBarras para definir o parâmetro antes de executar a consulta; tratamento adequado de ResultSet não fechado; correção de código duplicado; validação de violação de UNIQUE com errorCode nativo do SQL Server.
+
+    Limpeza do formulário de adição: campos de "Quantidade de Fardos" agora são ocultados corretamente ao limpar o formulário após adicionar um produto do tipo fardo.
+
+    Configuração externa do banco: implementado arquivo config.properties com prioridade de leitura (pasta do JAR > classpath > variáveis de ambiente > padrões).
+
+    Correção de SQL ambíguo: no método de gasto mensal por categoria, as colunas quantidade e preco_unitario foram qualificadas com o alias da tabela (m.quantidade * m.preco_unitario), eliminando o erro "Ambiguous column name".
+
+🤝 Contribuição
+
+Sugestões e melhorias são bem‑vindas! Sinta‑se à vontade para abrir uma issue ou enviar um pull request.
