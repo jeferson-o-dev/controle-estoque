@@ -7,9 +7,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import estoque.database.DatabaseConnection;
 import estoque.model.Categoria;
@@ -141,6 +144,11 @@ public class EstoqueController {
                 return false;
             }
 
+            if (atual.getQuantidadeFardos() < 0 || atual.getQuantidadeUnidades() < 0) {
+                conn.rollback();
+                return false;
+            }
+            
             atualizarProdutoNoBanco(conn, atual);
             registrarMovimentacao(conn, atual, Movimentacao.TipoMovimento.SAIDA,
                     unidadesSolicitadas, "Remoção de " + unidadesSolicitadas + " unidade(s)",
@@ -707,4 +715,207 @@ public class EstoqueController {
         return resultado;
     }
     
+    public Map<LocalDate, BigDecimal> getHistoricoPrecos(int produtoId, LocalDate inicio, LocalDate fim) {
+        Map<LocalDate, BigDecimal> historico = new LinkedHashMap<>();
+        String sql = """
+            SELECT CAST(data_hora AS DATE) AS dia, preco_unitario
+            FROM movimentacoes
+            WHERE produto_id = ? AND data_hora >= ? AND data_hora < ?
+              AND preco_unitario IS NOT NULL
+            ORDER BY data_hora
+            """;
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, produtoId);
+            stmt.setString(2, inicio.atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            stmt.setString(3, fim.plusDays(1).atStartOfDay().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    LocalDate dia = rs.getDate("dia").toLocalDate();
+                    BigDecimal preco = rs.getBigDecimal("preco_unitario");
+                    historico.put(dia, preco);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao buscar histórico de preços: " + e.getMessage());
+            throw new RuntimeException("Erro ao carregar dados para o gráfico.", e);
+        }
+        return historico;
+    }
+    
+ // Dentro de EstoqueController, após getHistoricoPrecos(...)
+
+    /**
+     * Retorna o histórico de preços de todos os produtos de uma categoria, no período.
+     * Mapa: nomeProduto → (data → preco)
+     */
+    public Map<String, Map<LocalDate, BigDecimal>> getHistoricoPrecosPorCategoria(
+            int categoriaId, LocalDate inicio, LocalDate fim) {
+
+        Map<String, Map<LocalDate, BigDecimal>> resultado = new LinkedHashMap<>();
+
+        // 1. Busca os IDs e nomes dos produtos da categoria
+        String sqlProdutos = "SELECT id, nome FROM produtos WHERE categoria_id = ? ORDER BY nome";
+
+        // 2. Para cada produto, busca os preços das movimentações no período
+        String sqlPrecos = """
+                SELECT CAST(data_hora AS DATE) AS dia, preco_unitario
+                FROM movimentacoes
+                WHERE produto_id = ? AND data_hora >= ? AND data_hora < ?
+                  AND preco_unitario IS NOT NULL
+                ORDER BY data_hora
+                """;
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+
+            // Obtém a lista de produtos da categoria
+            try (PreparedStatement stmtProd = conn.prepareStatement(sqlProdutos)) {
+                stmtProd.setInt(1, categoriaId);
+                try (ResultSet rsProd = stmtProd.executeQuery()) {
+                    while (rsProd.next()) {
+                        int id = rsProd.getInt("id");
+                        String nome = rsProd.getString("nome");
+                        Map<LocalDate, BigDecimal> historico = new LinkedHashMap<>();
+
+                        // Busca preços do produto no período
+                        try (PreparedStatement stmtPreco = conn.prepareStatement(sqlPrecos)) {
+                            stmtPreco.setInt(1, id);
+                            stmtPreco.setString(2, inicio.atStartOfDay()
+                                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                            stmtPreco.setString(3, fim.plusDays(1).atStartOfDay()
+                                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                            try (ResultSet rsPreco = stmtPreco.executeQuery()) {
+                                while (rsPreco.next()) {
+                                    LocalDate dia = rsPreco.getDate("dia").toLocalDate();
+                                    BigDecimal preco = rsPreco.getBigDecimal("preco_unitario");
+                                    historico.put(dia, preco);
+                                }
+                            }
+                        }
+
+                        // Só inclui o produto se houver ao menos um preço no período
+                        if (!historico.isEmpty()) {
+                            resultado.put(nome, historico);
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro em getHistoricoPrecosPorCategoria: " + e.getMessage());
+            throw new RuntimeException("Erro ao buscar histórico de preços por categoria.", e);
+        }
+
+        return resultado;
+    }
+    
+    /**
+     * Retorna o histórico de gastos (valor total das entradas) por dia, para cada produto da categoria.
+     * Mapa: nomeProduto -> (data -> total gasto no dia)
+     */
+    public Map<String, Map<LocalDate, BigDecimal>> getHistoricoGastosPorCategoria(
+            int categoriaId, LocalDate inicio, LocalDate fim) {
+
+        Map<String, Map<LocalDate, BigDecimal>> resultado = new LinkedHashMap<>();
+
+        String sqlProdutos = "SELECT id, nome FROM produtos WHERE categoria_id = ? ORDER BY nome";
+        String sqlGastos = """
+                SELECT CAST(data_hora AS DATE) AS dia,
+                       SUM(quantidade * preco_unitario) AS total_gasto
+                FROM movimentacoes
+                WHERE produto_id = ? AND data_hora >= ? AND data_hora < ?
+                  AND tipo = 'ENTRADA' AND preco_unitario IS NOT NULL
+                GROUP BY CAST(data_hora AS DATE)
+                ORDER BY dia
+                """;
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            try (PreparedStatement stmtProd = conn.prepareStatement(sqlProdutos)) {
+                stmtProd.setInt(1, categoriaId);
+                try (ResultSet rsProd = stmtProd.executeQuery()) {
+                    while (rsProd.next()) {
+                        int id = rsProd.getInt("id");
+                        String nome = rsProd.getString("nome");
+                        Map<LocalDate, BigDecimal> gastos = new LinkedHashMap<>();
+
+                        try (PreparedStatement stmtGastos = conn.prepareStatement(sqlGastos)) {
+                            stmtGastos.setInt(1, id);
+                            stmtGastos.setString(2, inicio.atStartOfDay()
+                                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                            stmtGastos.setString(3, fim.plusDays(1).atStartOfDay()
+                                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                            try (ResultSet rsGastos = stmtGastos.executeQuery()) {
+                                while (rsGastos.next()) {
+                                    LocalDate dia = rsGastos.getDate("dia").toLocalDate();
+                                    BigDecimal total = rsGastos.getBigDecimal("total_gasto");
+                                    gastos.put(dia, total);
+                                }
+                            }
+                        }
+
+                        if (!gastos.isEmpty()) {
+                            resultado.put(nome, gastos);
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro em getHistoricoGastosPorCategoria: " + e.getMessage());
+            throw new RuntimeException("Erro ao buscar gastos por categoria.", e);
+        }
+
+        return resultado;
+    }
+    
+    /**
+     * Retorna o total gasto (entradas) por mês para uma categoria.
+     * Inclui todos os meses do intervalo, preenchendo com zero os meses sem gasto.
+     */
+    public Map<YearMonth, BigDecimal> getGastoMensalPorCategoria(
+            int categoriaId, LocalDate inicio, LocalDate fim) {
+
+        // 1. Preenche todos os meses do intervalo com valor zero
+        Map<YearMonth, BigDecimal> resultado = new LinkedHashMap<>();
+        YearMonth ymInicio = YearMonth.from(inicio);
+        YearMonth ymFim = YearMonth.from(fim);
+        for (YearMonth ym = ymInicio; !ym.isAfter(ymFim); ym = ym.plusMonths(1)) {
+            resultado.put(ym, BigDecimal.ZERO);
+        }
+
+        // 2. Consulta SQL que traz os totais dos meses que possuem gastos
+        String sql = """
+            SELECT YEAR(m.data_hora) AS ano, MONTH(m.data_hora) AS mes,
+                   SUM(m.quantidade * m.preco_unitario) AS total_gasto
+            FROM movimentacoes m
+            JOIN produtos p ON m.produto_id = p.id
+            WHERE p.categoria_id = ? AND m.data_hora >= ? AND m.data_hora < ?
+              AND m.tipo = 'ENTRADA' AND m.preco_unitario IS NOT NULL
+            GROUP BY YEAR(m.data_hora), MONTH(m.data_hora)
+            ORDER BY ano, mes
+            """;
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, categoriaId);
+            stmt.setString(2, inicio.atStartOfDay()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            stmt.setString(3, fim.plusDays(1).atStartOfDay()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    int ano = rs.getInt("ano");
+                    int mes = rs.getInt("mes");
+                    BigDecimal total = rs.getBigDecimal("total_gasto");
+                    YearMonth ym = YearMonth.of(ano, mes);
+                    resultado.put(ym, total);  // substitui o zero pelo valor real
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro em getGastoMensalPorCategoria: " + e.getMessage());
+            throw new RuntimeException("Erro ao buscar gasto mensal por categoria.", e);
+        }
+        return resultado;
+    }
 }

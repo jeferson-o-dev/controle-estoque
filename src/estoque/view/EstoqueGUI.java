@@ -14,7 +14,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -39,6 +41,7 @@ import estoque.model.Produto;
 import estoque.model.ProdutoMovimento;
 import estoque.model.ProdutoSaldo;
 
+
 public class EstoqueGUI extends JFrame {
 	
 	private JComboBox<Categoria> cbFiltroCategoria;
@@ -49,6 +52,7 @@ public class EstoqueGUI extends JFrame {
 	private EstoqueController controller;
 	private JTabbedPane tabbedPane;
 	private JTextField tfCodigoBarrasAdicionar;
+
 
 	private DefaultTableModel tableModelProdutos;
 	private JTable tableProdutos;
@@ -811,7 +815,6 @@ public class EstoqueGUI extends JFrame {
 	    rbMovimentacoes.setSelected(true);
 	    topPanel.add(rbMovimentacoes);
 	    topPanel.add(rbEstado);
-	    
 
 	    JPanel filtroPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
 	    filtroPanel.setPreferredSize(new java.awt.Dimension(filtroPanel.getPreferredSize().width, 70));
@@ -821,7 +824,6 @@ public class EstoqueGUI extends JFrame {
 	    JLabel lblFim = new JLabel("Data Fim:");
 	    JTextField tfFim = new JTextField(12);
 	    tfFim.setToolTipText("d-M-yyyy (dia), M-yyyy (mês) ou yyyy (ano)");
-	   
 
 	    JLabel lblNomeFiltro = new JLabel("Nome:");
 	    JTextField tfFiltroNome = new JTextField(12);
@@ -838,6 +840,11 @@ public class EstoqueGUI extends JFrame {
 	    JButton btnGerar = new JButton("Gerar Relatório");
 	    JButton btnImprimir = new JButton("Imprimir");
 	    JButton btnExportar = new JButton("Exportar CSV");
+	    JButton btnGrafico = new JButton("Gráfico Preços");
+	    JButton btnGraficoCategoria = new JButton("Gráfico por Categoria");
+	    JRadioButton rbPrecoUnitario = new JRadioButton("Preço Unitário");
+	    JRadioButton rbValorGasto   = new JRadioButton("Valor Gasto");
+	    ButtonGroup bgTipoGrafico = new ButtonGroup();
 
 	    filtroPanel.add(lblInicio);
 	    filtroPanel.add(tfInicio);
@@ -851,13 +858,20 @@ public class EstoqueGUI extends JFrame {
 	    filtroPanel.add(btnGerar);
 	    filtroPanel.add(btnImprimir);
 	    filtroPanel.add(btnExportar);
+	    filtroPanel.add(btnGrafico);
+	    filtroPanel.add(btnGraficoCategoria);
+	    bgTipoGrafico.add(rbPrecoUnitario);
+	    bgTipoGrafico.add(rbValorGasto);
+	    rbPrecoUnitario.setSelected(true);
+	    filtroPanel.add(rbPrecoUnitario);
+	    filtroPanel.add(rbValorGasto);
 
 	    DefaultTableModel tableModel = new DefaultTableModel();
 	    JTable table = new JTable(tableModel);
 	    table.setDefaultEditor(Object.class, null);
 	    JScrollPane scrollPane = new JScrollPane(table);
-	    
-	 // 🆕 Painel de totais (inicialmente oculto)
+
+	    // Painel de totais (inicialmente oculto)
 	    JPanel painelTotais = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 5));
 	    JLabel lblTotalEntradas = new JLabel("Entradas: R$ 0,00");
 	    JLabel lblTotalSaidas = new JLabel("Saídas: R$ 0,00");
@@ -873,21 +887,23 @@ public class EstoqueGUI extends JFrame {
 	        chkZerados.setVisible(false);
 	    });
 	    rbEstado.addActionListener(e -> {
-	        lblFim.setVisible(true);   // agora fica visível (opcional)
-	        tfFim.setVisible(true);    // idem
+	        lblFim.setVisible(true);
+	        tfFim.setVisible(true);
 	        chkZerados.setVisible(true);
 	    });
 
 	    btnGerar.addActionListener(e -> {
 	        try {
-	        	painelTotais.setVisible(false);
+	            painelTotais.setVisible(false);
+	         // Remove qualquer renderizador personalizado anterior
+	            table.setDefaultRenderer(Object.class, new javax.swing.table.DefaultTableCellRenderer());
 	            String nomeFiltro = tfFiltroNome.getText().trim();
 	            Categoria catSel = (Categoria) cbFiltroCategoria.getSelectedItem();
 	            Integer catId = (catSel != null && catSel.getId() != 0) ? catSel.getId() : null;
 	            boolean apenasZerados = chkZerados.isSelected();
 
 	            if (rbMovimentacoes.isSelected()) {
-	                // Relatório de Movimentações (período) – inalterado
+	                // Relatório de Movimentações (período)
 	                String inicioStr = tfInicio.getText().trim();
 	                String fimStr = tfFim.getText().trim();
 
@@ -947,7 +963,7 @@ public class EstoqueGUI extends JFrame {
 	                            "Informação", JOptionPane.INFORMATION_MESSAGE);
 	                }
 	            } else {
-	                // ===== RELATÓRIO DE ESTADO DO ESTOQUE (DATA OU PERÍODO) =====
+	                // Relatório de Estado do Estoque (data ou período)
 	                String dataStr = tfInicio.getText().trim();
 	                String fimStr = tfFim.getText().trim();
 
@@ -967,7 +983,6 @@ public class EstoqueGUI extends JFrame {
 	                }
 	                LocalDate dataReferencia = intervaloInicio[1];
 
-	                // Verifica se a data fim foi preenchida
 	                if (!fimStr.isEmpty()) {
 	                    // MODO PERÍODO (movimento)
 	                    LocalDate[] intervaloFim = parseDataFlexivel(fimStr);
@@ -992,7 +1007,6 @@ public class EstoqueGUI extends JFrame {
 	                        return;
 	                    }
 
-	                    // Consulta o movimento no período
 	                    List<ProdutoMovimento> movs = controller.getMovimentoNoPeriodo(
 	                            dataReferencia, dataFim,
 	                            nomeFiltro.isEmpty() ? null : nomeFiltro,
@@ -1018,8 +1032,8 @@ public class EstoqueGUI extends JFrame {
 	                                valLiqStr
 	                        });
 	                    }
-	                    
-	                 // 🆕 Cálculo e exibição dos totais
+
+	                    // Totais
 	                    BigDecimal somaEntradas = BigDecimal.ZERO;
 	                    BigDecimal somaSaidas = BigDecimal.ZERO;
 	                    BigDecimal somaLiquido = BigDecimal.ZERO;
@@ -1030,7 +1044,6 @@ public class EstoqueGUI extends JFrame {
 	                        if (pm.getValorLiquido() != null)  somaLiquido  = somaLiquido.add(pm.getValorLiquido());
 	                    }
 
-	                    
 	                    lblTotalEntradas.setText("Entradas: " + nf.format(somaEntradas));
 	                    lblTotalSaidas.setText("Saídas: " + nf.format(somaSaidas));
 	                    lblTotalLiquido.setText("Líquido: " + nf.format(somaLiquido));
@@ -1042,7 +1055,7 @@ public class EstoqueGUI extends JFrame {
 	                                "Informação", JOptionPane.INFORMATION_MESSAGE);
 	                    }
 	                } else {
-	                    // MODO DATA ÚNICA (estoque na data) – comportamento original
+	                    // MODO DATA ÚNICA
 	                    if (dataReferencia.isAfter(LocalDate.now())) {
 	                        JOptionPane.showMessageDialog(panel,
 	                                "A data não pode ser futura.",
@@ -1075,7 +1088,8 @@ public class EstoqueGUI extends JFrame {
 	                        });
 	                    }
 
-	                    // Renderizador de zerados (apenas para modo data única)
+	                    // Renderizador de zerados
+	                 // Renderizador de zerados (modo data única)
 	                    table.setDefaultRenderer(Object.class, new javax.swing.table.DefaultTableCellRenderer() {
 	                        @Override
 	                        public java.awt.Component getTableCellRendererComponent(JTable table, Object value,
@@ -1085,7 +1099,7 @@ public class EstoqueGUI extends JFrame {
 	                                Object totalObj = table.getModel().getValueAt(row, 4);
 	                                if (totalObj instanceof Integer) {
 	                                    int total = (Integer) totalObj;
-	                                    if (total == 0) {
+	                                    if (total <= 0) {   // agora também destaca negativos (erro)
 	                                        c.setForeground(java.awt.Color.RED);
 	                                        if (!isSelected) {
 	                                            c.setBackground(new java.awt.Color(255, 230, 230));
@@ -1191,7 +1205,128 @@ public class EstoqueGUI extends JFrame {
 	        }
 	    });
 
-	 // Painel que agrupa radio buttons e filtros verticalmente
+	    // Listener do botão Gráfico Preços
+	    btnGrafico.addActionListener(e -> {
+	    	
+	        if (table.getRowCount() == 0) {
+	            JOptionPane.showMessageDialog(panel, "Gere um relatório antes de visualizar o gráfico.");
+	            return;
+	        }
+
+	        String inicioStr = tfInicio.getText().trim();
+	        String fimStr = tfFim.getText().trim();
+	        if (inicioStr.isEmpty() || fimStr.isEmpty()) {
+	            JOptionPane.showMessageDialog(panel, "Preencha as datas de início e fim para o gráfico.");
+	            return;
+	        }
+	        try {
+	            LocalDate[] intervalosInicio = parseDataFlexivel(inicioStr);
+	            LocalDate[] intervalosFim = parseDataFlexivel(fimStr);
+	            if (intervalosInicio == null || intervalosFim == null) {
+	                JOptionPane.showMessageDialog(panel, "Datas inválidas.");
+	                return;
+	            }
+	            LocalDate inicio = intervalosInicio[0];
+	            LocalDate fim = intervalosFim[1];
+
+	            int selectedRow = table.getSelectedRow();
+	            if (selectedRow == -1) {
+	                JOptionPane.showMessageDialog(panel, "Selecione um produto na tabela para gerar o gráfico.");
+	                return;
+	            }
+	            String codigoBarras = (String) table.getValueAt(selectedRow, 0);
+	            Produto produto = controller.buscarProdutoPorCodigoBarras(codigoBarras);
+	            if (produto == null) {
+	                JOptionPane.showMessageDialog(panel, "Produto não encontrado.");
+	                return;
+	            }
+
+	            Map<LocalDate, BigDecimal> historico = controller.getHistoricoPrecos(produto.getId(), inicio, fim);
+	            if (historico.isEmpty()) {
+	                JOptionPane.showMessageDialog(panel, "Nenhuma movimentação com preço encontrada no período.");
+	                return;
+	            }
+	            GraficoPrecoView grafico = new GraficoPrecoView(produto.getNome(), historico);
+	            grafico.setVisible(true);
+	        } catch (Exception ex) {
+	            JOptionPane.showMessageDialog(panel, "Erro ao gerar gráfico: " + ex.getMessage());
+	        }
+	        
+	    });
+
+	 // Listener do botão Gráfico por Categoria
+	    btnGraficoCategoria.addActionListener(e -> {
+	        String inicioStr = tfInicio.getText().trim();
+	        String fimStr = tfFim.getText().trim();
+	        if (inicioStr.isEmpty() || fimStr.isEmpty()) {
+	            JOptionPane.showMessageDialog(panel, "Preencha as datas de início e fim.");
+	            return;
+	        }
+	        try {
+	            LocalDate[] intervaloInicio = parseDataFlexivel(inicioStr);
+	            LocalDate[] intervaloFim = parseDataFlexivel(fimStr);
+	            if (intervaloInicio == null || intervaloFim == null) {
+	                JOptionPane.showMessageDialog(panel, "Datas inválidas.");
+	                return;
+	            }
+	            LocalDate inicio = intervaloInicio[0];
+	            LocalDate fim = intervaloFim[1];
+
+	            Categoria catSel = (Categoria) cbFiltroCategoria.getSelectedItem();
+	            if (catSel == null || catSel.getId() == 0) {
+	                JOptionPane.showMessageDialog(panel,
+	                        "Selecione uma categoria específica (não 'Todas').",
+	                        "Categoria obrigatória", JOptionPane.WARNING_MESSAGE);
+	                return;
+	            }
+
+	            Map<String, Map<LocalDate, BigDecimal>> dados;
+	            String tituloGrafico;
+	            String eixoY;
+
+	            if (rbValorGasto.isSelected()) {
+	                // MODO VALOR GASTO: gráfico mensal com uma única linha (total da categoria)
+	                Map<YearMonth, BigDecimal> gastoMensal =
+	                        controller.getGastoMensalPorCategoria(catSel.getId(), inicio, fim);
+
+	                if (gastoMensal.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "Nenhum gasto encontrado no período para esta categoria.",
+	                            "Informação", JOptionPane.INFORMATION_MESSAGE);
+	                    return;
+	                }
+
+	                // Converte YearMonth -> LocalDate (primeiro dia do mês) para o gráfico
+	                Map<LocalDate, BigDecimal> dadosConvertidos = new LinkedHashMap<>();
+	                for (Map.Entry<YearMonth, BigDecimal> entry : gastoMensal.entrySet()) {
+	                    dadosConvertidos.put(entry.getKey().atDay(1), entry.getValue());
+	                }
+
+	                // Usa o construtor de UMA única série com eixo Y customizado
+	                new GraficoPrecoView("Valor Gasto - " + catSel.getNome(),
+	                                     dadosConvertidos,
+	                                     "Valor Gasto (R$)").setVisible(true);
+
+	            } else {
+	                // MODO PREÇO UNITÁRIO (comportamento original: uma linha por produto)
+	            	dados = controller.getHistoricoPrecosPorCategoria(catSel.getId(), inicio, fim);
+	                if (dados.isEmpty()) {
+	                    JOptionPane.showMessageDialog(panel,
+	                            "Nenhum produto da categoria possui histórico de preço no período.",
+	                            "Informação", JOptionPane.INFORMATION_MESSAGE);
+	                    return;
+	                }
+
+	                new GraficoPrecoView("Evolução dos Preços - " + catSel.getNome(),
+	                                     dados, true, "Preço Unitário (R$)").setVisible(true);
+	            }
+
+	        } catch (Exception ex) {
+	            JOptionPane.showMessageDialog(panel, "Erro: " + ex.getMessage());
+	        }
+	    });
+	    
+	    // Painel que agrupa radio buttons e filtros
 	    JPanel topContainer = new JPanel();
 	    topContainer.setLayout(new javax.swing.BoxLayout(topContainer, javax.swing.BoxLayout.Y_AXIS));
 	    topContainer.add(topPanel);
@@ -1320,4 +1455,7 @@ public class EstoqueGUI extends JFrame {
 			}
 		}
 	}
+	
+	
+	
 }
